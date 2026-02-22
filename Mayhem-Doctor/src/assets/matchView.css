@@ -1,0 +1,142 @@
+/* MATCH VIEW */
+
+.aram-match-view {
+    animation: fadeIn 0.2s ease;
+}
+
+.aram-match-header {
+    margin-bottom: 20px;
+}
+
+.aram-team-block {
+    margin-bottom: 40px;
+}
+
+.aram-scoreboard {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.aram-scoreboard th,
+.aram-scoreboard td {
+    padding: 8px;
+    text-align: left;
+    border-bottom: 1px solid #2a2a2a;
+}
+
+.aram-champ-cell {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.aram-champ-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 6px;
+}
+
+.aram-item-icon {
+    width: 24px;
+    height: 24px;
+    margin-right: 2px;
+}
+
+.aram-spell-icon {
+    width: 22px;
+    height: 22px;
+}
+
+.aram-damage-bar-wrapper {
+    position: relative;
+    background: #1a1a1a;
+    height: 14px;
+    border-radius: 4px;
+}
+
+.aram-damage-bar {
+    background: linear-gradient(90deg, #00b4ff, #0078ff);
+    height: 100%;
+    border-radius: 4px;
+}
+
+.aram-damage-bar-wrapper span {
+    position: absolute;
+    right: 4px;
+    top: -2px;
+    font-size: 11px;
+}
+
+.aram-me {
+    background: rgba(0, 120, 255, 0.12);
+}
+
+/* New Modal View for specific match */
+.aram-full-match-view { display: flex; flex-direction: column; gap: 5px; animation: fadeIn 0.2s ease;max-height: -webkit-fill-available;}
+.fm-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #333; padding-bottom: 10px; }
+.fm-header-left { display: flex; align-items: center; gap: 15px; }
+.fm-header h2 { margin: 0; font-size: 24px; text-transform: uppercase; }
+.fm-victory { color: #01ce8a; }
+.fm-defeat { color: #e84057; }
+.fm-meta { color: #a09b8c; font-size: 13px; }
+
+.fm-table { width: 100%; border-collapse: collapse; font-size: 13px; text-align: left; table-layout: fixed; }
+
+.fm-table th:nth-child(1), .fm-table td:nth-child(1) { width: 220px; }
+.fm-table th:nth-child(2), .fm-table td:nth-child(2) { width: 120px; }
+.fm-table th:nth-child(3), .fm-table td:nth-child(3) { width: 90px; }
+.fm-table th:nth-child(4), .fm-table td:nth-child(4) { width: 140px; }
+.fm-table th:nth-child(5), .fm-table td:nth-child(5) { width: 200px; }
+.fm-table th { padding: 8px; color: #a09b8c; font-weight: bolder; font-size: 11px; text-transform: uppercase; border-bottom: 1px solid #333; }
+.fm-table td { padding: 6px 8px; border-bottom: 1px solid rgba(255,255,255,0.05); vertical-align: middle; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fm-me td { background: rgba(255, 255, 255, 0.08); }
+
+.fm-champ { display: flex; align-items: center; gap: 8px; }
+.fm-champ img { width: 32px; height: 32px; border-radius: 50%; border: 1px solid #333; flex-shrink: 0; }
+.fm-spells { display: flex; flex-direction: column; gap: 2px; flex-shrink: 0; }
+.fm-spells img { width: 15px; height: 15px; border-radius: 3px; }
+
+.fm-name-wrapper { display: flex; flex-direction: column; min-width: 0; }
+.fm-name { color: #f0e6d2; font-weight: bold; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.copy-badge {
+    font-size: 10px; color: #a09b8c; background: #1e2328; border: 1px solid #333;
+    border-radius: 3px; padding: 0 4px; margin-top: 2px; cursor: pointer;
+    width: fit-content; transition: 0.2s; display: flex; align-items: center; gap: 3px;
+}
+.copy-badge:hover { border-color: #c8aa6e; color: #f0e6d2; }
+.copy-icon { width: 8px; height: 8px; fill: currentColor; }
+.fm-items, .fm-augs { display: flex; gap: 3px; flex-wrap: nowrap; }
+.fm-items img, .fm-augs img { width: 24px; height: 24px; border-radius: 4px; border: 1px solid #222; background: #111; }
+
+.fm-bar-wrap { display: flex; align-items: center; gap: 8px; font-size: 12px; color: #f0e6d2; }
+.fm-bar-bg { flex-grow: 1; height: 6px; background: #1e2328; border-radius: 3px; overflow: hidden; }
+.fm-bar-fill { height: 100%; transition: width 0.3s ease, background-color 0.3s ease; }
+
+.fm-team-title { font-size: 15px; font-weight: bold; margin-bottom: 5px; margin-top: 10px; display: flex; justify-content: space-between;}
+.fm-blue { color: #00a0e9; }
+.fm-red { color: #e84057; }
+
+.stat-header { 
+    display: flex; 
+    justify-content: space-between;
+    align-items: center; 
+    width: 100%; 
+    user-select: none; 
+}
+.stat-arrow { 
+    cursor: pointer; 
+    padding: 0; 
+    color: #ffffff; 
+    font-weight: bolder; 
+    transition: 0.2s;
+    width: 20px;
+    text-align: center;
+}
+.stat-arrow:hover { color: #f0e6d2; background: rgba(255,255,255,0.1); border-radius: 3px; }
+
+.stat-label { 
+    flex-grow: 1; 
+    text-align: center; 
+    white-space: nowrap;
+}

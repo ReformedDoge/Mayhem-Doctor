@@ -1,0 +1,397 @@
+.sc-root {
+    padding-top: 4px;
+}
+
+.sc-hidden {
+    display: none !important;
+}
+
+/* Search input */
+.sc-search-input {
+    width: 100%;
+    box-sizing: border-box;
+    background: #0a1520;
+    border: 1px solid #3a4a55;
+    border-bottom: 2px solid #c8aa6e;
+    color: #f0e6d2;
+    padding: 10px 14px;
+    font-size: 16px;
+    font-family: "Beaufort for LOL", serif;
+    outline: none;
+    margin-bottom: 18px;
+    transition: border-color 0.2s;
+    letter-spacing: 0.5px;
+}
+
+.sc-search-input:focus {
+    border-color: #0acbe6;
+    border-bottom-color: #0acbe6;
+}
+
+.sc-search-input::placeholder {
+    color: #4a5a65;
+}
+
+/* Champion icon grid */
+.sc-champion-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.sc-champ-cell {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    cursor: pointer;
+    padding: 6px;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    transition: background 0.15s, border-color 0.15s;
+    width: 72px;
+}
+
+.sc-champ-cell:hover {
+    background: rgba(200, 170, 110, 0.12);
+    border-color: #c8aa6e;
+}
+
+.sc-champ-icon {
+    width: 52px;
+    height: 52px;
+    border: 1px solid #785a28;
+    border-radius: 4px;
+    object-fit: cover;
+    background: #000;
+    transition: border-color 0.15s;
+}
+
+.sc-champ-cell:hover .sc-champ-icon {
+    border-color: #c8aa6e;
+}
+
+.sc-champ-name {
+    font-size: 10px;
+    color: #c4b998;
+    text-align: center;
+    line-height: 1.2;
+    max-width: 68px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.sc-champ-games {
+    font-size: 10px;
+    color: #888;
+    text-align: center;
+}
+
+.sc-no-results {
+    color: #888;
+    font-size: 14px;
+    padding: 20px 0;
+}
+
+/* Detail view */
+.sc-detail-view {
+    animation: fadeIn 0.2s;
+}
+
+.sc-back-btn {
+    margin-bottom: 16px;
+}
+
+.sc-detail-header {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    margin-bottom: 24px;
+    padding-bottom: 18px;
+    border-bottom: 1px solid #c8aa6e;
+}
+
+.sc-detail-icon {
+    width: 80px;
+    height: 80px;
+    border: 2px solid #c8aa6e;
+    border-radius: 6px;
+    object-fit: cover;
+    background: #000;
+    flex-shrink: 0;
+}
+
+.sc-detail-champ-name {
+    font-size: 26px;
+    color: #f0e6d2;
+    font-weight: bold;
+    margin-bottom: 8px;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+}
+
+.sc-detail-stats {
+    font-size: 15px;
+    color: #c4b998;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    align-items: center;
+}
+
+.sc-total-games {
+    color: #c4b998;
+}
+
+.sc-kda-label,
+.sc-dmg-label {
+    color: #c4b998;
+}
+
+/* Two-column layout for items & augments */
+.sc-detail-cols {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 30px;
+    margin-top: 4px;
+}
+
+.sc-detail-col h3 {
+    color: #c8aa6e;
+    margin-top: 0;
+    margin-bottom: 10px;
+    font-size: 15px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    border-bottom: 1px solid #2c353b;
+    padding-bottom: 8px;
+}
+
+.sc-combo-row {
+    margin-bottom: 24px;
+    padding-bottom: 20px;
+    border-bottom: 1px solid #2c353b;
+}
+
+.sc-empty {
+    color: #666;
+    font-size: 13px;
+    margin: 8px 0;
+}
+
+/* Combo sub-group (Pairs / Trios / Quads) */
+.sc-combo-subgroup {
+    margin-bottom: 16px;
+}
+
+.sc-combo-sublabel {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: #888;
+    margin-bottom: 6px;
+}
+
+/* Combo cards - top 3 for each size */
+.sc-combo-cards {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.sc-combo-card {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 10px;
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid #2c353b;
+    border-radius: 3px;
+    transition: border-color 0.15s, background 0.15s;
+}
+
+.sc-combo-card:hover {
+    border-color: #785a28;
+    background: rgba(200, 170, 110, 0.06);
+}
+
+.sc-combo-rank {
+    font-size: 11px;
+    color: #888;
+    font-weight: bold;
+    min-width: 20px;
+    text-align: center;
+    flex-shrink: 0;
+}
+
+.sc-combo-chips {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 4px;
+    flex: 1;
+}
+
+.sc-combo-chip {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+}
+
+.sc-combo-chip--icon-only {
+    /* ermmmm */
+}
+
+/* Augment combos*/
+.sc-combo-chip--aug {
+    width: 140px;
+}
+
+.sc-combo-name {
+    font-size: 11px;
+    color: #c4b998;
+    white-space: nowrap;
+    max-width: 100px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Augment name*/
+.sc-combo-name--aug {
+    max-width: none;
+    width: 104px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    display: inline-block;
+}
+
+.sc-combo-plus {
+    color: #785a28;
+    font-size: 11px;
+    font-weight: bold;
+    flex-shrink: 0;
+    padding: 0 1px;
+}
+
+.sc-combo-meta {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 1px;
+    min-width: 54px;
+    flex-shrink: 0;
+}
+
+.sc-combo-games {
+    font-size: 11px;
+    color: #555;
+}
+
+/* Augment combo chip row, fixed-width so all rows align */
+.sc-combo-chips--aug {
+    flex-wrap: nowrap;
+    overflow: hidden;
+}
+
+/* 
+   AUGMENT SECTION — SUGGESTED BUILD & PAIRS
+*/
+
+/* Rarity-coloured borders on aug chips */
+.sc-aug-silver   { border: 1px solid #7a8fa6; }
+.sc-aug-gold     { border: 1px solid #c8aa6e; }
+.sc-aug-prismatic { border: 1px solid #a06ddb; }
+
+/* Small rarity dot in aug tables */
+.sc-rarity-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin-right: 6px;
+    flex-shrink: 0;
+}
+.sc-rarity-dot.sc-aug-silver   { background: #7a8fa6; border: none; }
+.sc-rarity-dot.sc-aug-gold     { background: #c8aa6e; border: none; }
+.sc-rarity-dot.sc-aug-prismatic { background: #a06ddb; border: none; }
+
+/* Section titles inside aug/item panels */
+.sc-section-title {
+    color: #c8aa6e;
+    margin-top: 0;
+    margin-bottom: 10px;
+    font-size: 14px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    border-bottom: 1px solid #2c353b;
+    padding-bottom: 6px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.sc-section-title--pairs {
+    margin-top: 20px;
+}
+
+/* Badge next to "Suggested Build" title */
+.sc-model-badge {
+    font-size: 9px;
+    font-weight: normal;
+    letter-spacing: 0.5px;
+    color: #888;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid #3a3a3a;
+    border-radius: 3px;
+    padding: 1px 6px;
+    text-transform: uppercase;
+    vertical-align: middle;
+}
+
+/* Suggested build card */
+.sc-suggested-build {
+    background: rgba(160, 109, 219, 0.06);
+    border: 1px solid rgba(160, 109, 219, 0.3);
+    border-radius: 4px;
+    padding: 12px 14px;
+    margin-bottom: 4px;
+}
+
+.sc-suggested-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 10px;
+}
+
+.sc-suggested-chip {
+    padding: 2px;
+}
+
+.sc-suggested-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 8px;
+    font-size: 11px;
+}
+
+.sc-suggested-label {
+    color: #666;
+    font-style: italic;
+    text-transform: none;
+    letter-spacing: 0;
+}
+
+.sc-conf-high { color: #2de0a5; }
+.sc-conf-mid  { color: #c8aa6e; }
+.sc-conf-low  { color: #888;    }
+
+/* Aug/item section panels (children of .sc-detail-cols) */
+.sc-aug-section,
+.sc-item-section {
+    /* ERMMM */
+}

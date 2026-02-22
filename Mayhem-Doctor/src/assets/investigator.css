@@ -1,0 +1,154 @@
+/*  Investigator tab panel, dashboard controls, status bar, keyframes, command bar picker. */
+.mi-panel-hidden {
+    display: none !important;
+}
+
+/* Hide the panel when a friend profile overlay modal is open */
+.mi-panel-overlay-hidden {
+    display: none !important;
+}
+
+/*  Dashboard Panel  */
+#mi-profile-panel {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 20px 28px 40px;
+    box-sizing: border-box;
+    color: #c4b998;
+    font-family: "Beaufort for LOL", serif;
+    animation: fadeIn 0.2s;
+}
+
+/*  Dashboard Interior  */
+.mi-dashboard {
+    /* ermm */
+}
+
+/*  Controls Row  */
+.mi-controls {
+    display: flex;
+    align-items: flex-end;
+    gap: 20px;
+    flex-wrap: wrap;
+    margin-bottom: 16px;
+    padding: 14px 16px;
+    background: rgba(0, 0, 0, 0.35);
+    border: 1px solid #2c353b;
+    width: fit-content;
+}
+
+.mi-input-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.mi-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: #888;
+}
+
+.mi-text-input {
+    background: #0a1520;
+    border: 1px solid #3a4a55;
+    color: #f0e6d2;
+    padding: 6px 10px;
+    font-size: 13px;
+    font-family: "Beaufort for LOL", serif;
+    width: 200px;
+    outline: none;
+    transition: border-color 0.2s;
+}
+
+.mi-text-input:focus {
+    border-color: #0acbe6;
+}
+
+.mi-text-input::placeholder { color: #4a5a65; }
+
+.mi-slider-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.mi-slider {
+    width: 130px;
+    accent-color: #0acbe6;
+    cursor: pointer;
+}
+
+.mi-btn {
+    padding: 7px 22px;
+    font-size: 13px;
+}
+
+/*  Status Bar  */
+.mi-status-bar {
+    padding: 9px 14px;
+    font-size: 13px;
+    margin-bottom: 14px;
+    border-left: 3px solid transparent;
+    max-width: 700px;
+}
+
+.mi-status-hidden { display: none; }
+
+.mi-status-info {
+    background: rgba(10, 203, 230, 0.08);
+    border-left-color: #0acbe6;
+    color: #a0d8e0;
+}
+
+.mi-status-success {
+    background: rgba(45, 224, 165, 0.08);
+    border-left-color: #2de0a5;
+    color: #2de0a5;
+}
+
+.mi-status-error {
+    background: rgba(224, 79, 95, 0.1);
+    border-left-color: #e04f5f;
+    color: #e04f5f;
+}
+
+/*  Results Area  */
+.mi-results { margin-top: 4px; }
+
+.mi-results h2 {
+    color: #f0e6d2;
+    border-bottom: 1px solid #c8aa6e;
+    padding-bottom: 12px;
+    margin-top: 0;
+    font-size: 18px;
+}
+
+.mi-results h3 {
+    color: #c8aa6e;
+    margin-top: 28px;
+    margin-bottom: 8px;
+    font-size: 16px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+/*  Keyframes  */
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+}
+/* Command Bar Modal — picker button row */
+.cb-picker-buttons {
+    display: flex;
+    gap: 10px;
+    margin-top: 8px;
+}
+.cb-picker-buttons .aram-btn-start {
+    flex: 1;
+}
