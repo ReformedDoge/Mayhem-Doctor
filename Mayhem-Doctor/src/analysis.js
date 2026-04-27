@@ -571,7 +571,7 @@ export async function getHomeDashboardData() {
     // Calculate Streak
     let streak = 0;
     let streakType = null;
-    for (const res of entry.history.slice(0, 5)) {
+    for (const res of entry.history) {
       if (!streakType) streakType = res.result;
       if (res.result === streakType) streak++;
       else break;
