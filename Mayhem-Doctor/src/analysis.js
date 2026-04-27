@@ -587,24 +587,28 @@ export async function getHomeDashboardData() {
 
     const topChamps = Object.values(champStats)
       .sort((a, b) => {
-          // Calculate Net Wins (Wins - Losses)
-          const netA = a.wins - (a.games - a.wins);
-          const netB = b.wins - (b.games - b.wins);
-          
-          // Sort by Net Wins (highest first)
-          // Tie-break #1: Win Rate
-          // Tie-break #2: Games Played
-          return netB - netA || (b.wins / b.games) - (a.wins / a.games) || b.games - a.games;
-        })
-        .slice(0, 4);
+        // Calculate Net Wins (Wins - Losses)
+        const netA = a.wins - (a.games - a.wins);
+        const netB = b.wins - (b.games - b.wins);
 
-      /* .sort((a, b) => b.games - a.games || (b.wins / b.games) - (a.wins / a.games))
+        // Sort by Net Wins (highest first)
+        // Tie-break #1: Win Rate
+        // Tie-break #2: Games Played
+        return (
+          netB - netA ||
+          b.wins / b.games - a.wins / a.games ||
+          b.games - a.games
+        );
+      })
+      .slice(0, 4);
+
+    /* .sort((a, b) => b.games - a.games || (b.wins / b.games) - (a.wins / a.games))
       .slice(0, 4); */
 
-      /* .sort((a, b) => smoothedWinRate(b.wins, b.games) - smoothedWinRate(a.wins, a.games) || b.games - a.games)
+    /* .sort((a, b) => smoothedWinRate(b.wins, b.games) - smoothedWinRate(a.wins, a.games) || b.games - a.games)
       .slice(0, 4); */
 
-      /* .sort((a, b) => (b.wins / b.games) - (a.wins / a.games) || b.games - a.games)
+    /* .sort((a, b) => (b.wins / b.games) - (a.wins / a.games) || b.games - a.games)
       .slice(0, 4); */
 
     const allTimeChampStats = {};
