@@ -695,7 +695,7 @@ export async function renderStatsInto(
         <div class="aram-tab-bar">
             <div class="aram-tab-item active"    data-tab="${uid}-general">General Stats</div>
             <div class="aram-tab-item"            data-tab="${uid}-history" id="${uid}-tab-history">Match History</div>
-            <div class="aram-tab-item"            data-tab="${uid}-champions">My Champions</div>
+            <div class="aram-tab-item"            data-tab="${uid}-champions">Player's Champions</div>
             <div class="aram-tab-item"            data-tab="${uid}-global">Global Champions</div>
             <div class="aram-tab-item"            data-tab="${uid}-settings">Settings</div>
         </div>

@@ -13,6 +13,7 @@ const DEFAULT_SETTINGS = {
   injectInvestigatorTab: true,
   checkUpdates: true,
   dashboardLookback: 20,
+  lastAnalysisCount: 50,
 };
 
 let _settings = { ...DEFAULT_SETTINGS };
@@ -135,6 +136,10 @@ export function setUpdateBadgeCallback(fn) {
 }
 export function hasUpdate() {
   return _latestRelease !== null;
+}
+
+export function updateSetting(key, value) {
+  setSetting(key, value);
 }
 
 //  Settings tab renderer

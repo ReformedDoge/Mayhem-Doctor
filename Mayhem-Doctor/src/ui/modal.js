@@ -8,7 +8,7 @@ import {
   getHomeDashboardData,
 } from "../analysis.js";
 import { renderStatsInto } from "./tabs.js";
-import { getCurrentVersion, hasUpdate, getLatestRelease } from "./settings.js";
+import { getCurrentVersion, hasUpdate, getLatestRelease, loadSettings, updateSetting, getSettings  } from "./settings.js";
 
 //  Modal factory
 export function createModal() {
@@ -44,7 +44,7 @@ export async function openCommandBarModal() {
 
   function runAndRender(startFn, args, title) {
     modalContent.innerHTML = `
-            <div class="aram-modal-close">&times;</div>
+            <div class="aram-modal-close" title="Close">&times;</div>
             <h2 id="cb-title">${title}</h2>
             <div id="cb-status-bar" class="mi-status-bar mi-status-info"></div>
         `;
@@ -63,7 +63,7 @@ export async function openCommandBarModal() {
             {
               showClose: true,
               showHome: true,
-              onHome: () => renderHome(),
+              onHome: () => renderHome(), // Triggers fresh render
               title,
             },
           );
@@ -75,131 +75,110 @@ export async function openCommandBarModal() {
 
   // Picker screen
   async function renderHome() {
+    const settings = getSettings();
+    const currentSavedCount = settings.lastAnalysisCount || 50;
+
     modalContent.innerHTML = `<div class="mi-status-bar mi-status-info" style="margin:40px auto; width: fit-content; background: transparent; border: none;">Loading dashboard...</div>`;
     const dashData = await getHomeDashboardData();
-  let dashboardHtml = "";
+    let dashboardHtml = "";
 
-  if (dashData) {
-    const wr = (
-      (dashData.wins / Math.max(1, dashData.wins + dashData.losses)) *
-      100
-    ).toFixed(1);
-    dashboardHtml = `
-                <div class="home-dash">
-                    <div class="dash-welcome">
-                        <span class="dash-label">Your Dashboard (Last ${dashData.lookback})</span>
-                        <div class="dash-summary">${dashData.wins}W - ${dashData.losses}L • <span class="aram-win-high">${wr}% WR</span></div>
-                        <div class="dash-trend">
-                            ${dashData.trend.map((res) => `<div class="trend-dot ${res === "Win" ? "win" : res === "Loss" ? "loss" : "remake"}"></div>`).join("")}
-                            <span class="trend-label">Recent Trend</span>
-                        </div>
-                    </div>
-                    <div class="dash-highlights">
-                        <span class="dash-label">Performance Analytics</span>
-                        <div class="dash-analytics-grid">
-                            <div class="dash-analytic-item">
-                                <span class="analytic-label">Avg KDA</span>
-                                <span class="analytic-value">${dashData.avgKda}</span>
-                            </div>
-                            <div class="dash-analytic-item">
-                                <span class="analytic-label">Avg DPM</span>
-                                <span class="analytic-value">${dashData.avgDpm}</span>
-                            </div>
-                            <div class="dash-analytic-item">
-                                <span class="analytic-label">Avg GPM</span>
-                                <span class="analytic-value">${dashData.avgGpm}</span>
-                            </div>
-                            <div class="dash-analytic-item">
-                                <span class="analytic-label">Avg KP%</span>
-                                <span class="aram-win-high analytic-value">${dashData.avgKp}%</span>
-                            </div>
-                        </div>
+    if (dashData) {
+      const wr = ((dashData.wins / Math.max(1, dashData.wins + dashData.losses)) * 100).toFixed(1);
+      dashboardHtml = `
+          <div class="home-dash">
+              <div class="dash-welcome">
+                  <span class="dash-label">Your Dashboard (Last ${dashData.lookback})</span>
+                  <div class="dash-summary">${dashData.wins}W - ${dashData.losses}L • <span class="aram-win-high">${wr}% WR</span></div>
+                  <div class="dash-trend">
+                      ${dashData.trend.map((res) => `<div class="trend-dot ${res === "Win" ? "win" : res === "Loss" ? "loss" : "remake"}"></div>`).join("")}
+                      <span class="trend-label">Recent Trend</span>
+                  </div>
+              </div>
+              <div class="dash-highlights">
+                  <span class="dash-label">Performance Analytics</span>
+                  <div class="dash-analytics-grid">
+                      <div class="dash-analytic-item">
+                          <span class="analytic-label">Avg KDA</span>
+                          <span class="analytic-value">${dashData.avgKda}</span>
+                      </div>
+                      <div class="dash-analytic-item">
+                          <span class="analytic-label">Avg DPM</span>
+                          <span class="analytic-value">${dashData.avgDpm}</span>
+                      </div>
+                      <div class="dash-analytic-item">
+                          <span class="analytic-label">Avg GPM</span>
+                          <span class="analytic-value">${dashData.avgGpm}</span>
+                      </div>
+                      <div class="dash-analytic-item">
+                          <span class="analytic-label">Avg KP%</span>
+                          <span class="aram-win-high analytic-value">${dashData.avgKp}%</span>
+                      </div>
+                  </div>
+                  <span class="dash-label" style="margin-top:20px;">Performance Form</span>
+                  <div class="dash-analytics-grid" style="grid-template-columns: repeat(3, 1fr);">
+                      <div class="dash-analytic-item">
+                          <span class="analytic-label">Diversity</span>
+                          <span class="analytic-value">${dashData.diversity} Unique Champions</span>
+                      </div>
+                      <div class="dash-analytic-item">
+                          <span class="analytic-label">Avg Length</span>
+                          <span class="analytic-value">${dashData.avgDuration}m</span>
+                      </div>
+                      <div class="dash-analytic-item">
+                          <span class="analytic-label">Current Streak</span>
+                          <span class="analytic-value ${dashData.streak.includes("Win") ? "aram-win-high" : "aram-loss-text"}">${dashData.streak}</span>
+                      </div>
+                  </div>
+                  <span class="dash-label" style="margin-top:20px;">Top Champions (Current Window)</span>
+                  <div class="dash-champs">
+                      ${dashData.topChamps.map((c) => `
+                          <div class="dash-champ-card">
+                              <img src="/lol-game-data/assets/v1/champion-icons/${c.id}.png" class="aram-icon">
+                              <div class="dash-champ-info">
+                                  <div class="dash-champ-stats">${c.games}G • ${((c.wins / c.games) * 100).toFixed(0)}%</div>
+                              </div>
+                          </div>
+                      `).join("")}
+                  </div>
+                  <span class="dash-label" style="margin-top:24px;">Overall Records (All-Time)</span>
+                  <div class="dash-analytics-grid" style="grid-template-columns: repeat(2, 1fr); gap: 8px;">
+                      <div class="dash-analytic-item">
+                          <span class="analytic-label">Lifetime Diversity</span>
+                          <span class="analytic-value">${dashData.lifetimeDiversity} Champions</span>
+                      </div>
+                      <div class="dash-analytic-item">
+                          <span class="analytic-label">Average Game Length (${dashData.lifetimeAvgLen}m)</span>
+                          <span class="analytic-value">${dashData.lifetimeTimeStr}</span>
+                      </div>
+                  </div>
+              </div>
+              <div class="dash-footer">Cached: ${dashData.totalGames} games &nbsp;•&nbsp; Updated: ${new Date(dashData.savedAt).toLocaleTimeString()}</div>
+          </div>
+      `;
+    }
 
-                        <span class="dash-label" style="margin-top:20px;">Performance Form</span>
-                        <div class="dash-analytics-grid" style="grid-template-columns: repeat(3, 1fr);">
-                            <div class="dash-analytic-item">
-                                <span class="analytic-label">Diversity</span>
-                                <span class="analytic-value">${dashData.diversity} Unique Champions Played</span>
-                            </div>
-                            <div class="dash-analytic-item">
-                                <span class="analytic-label">Avg Length</span>
-                                <span class="analytic-value">${dashData.avgDuration}m</span>
-                            </div>
-                            <div class="dash-analytic-item">
-                                <span class="analytic-label">Current Streak</span>
-                                <span class="analytic-value ${dashData.streak.includes("Win") ? "aram-win-high" : "aram-loss-text"}">${dashData.streak}</span>
-                            </div>
-                        </div>
-
-                        <span class="dash-label" style="margin-top:20px;">Top Champions (Current Window)</span>
-                        <div class="dash-champs">
-                            ${dashData.topChamps
-                              .map(
-                                (c) => `
-                                <div class="dash-champ-card">
-                                    <img src="/lol-game-data/assets/v1/champion-icons/${c.id}.png" class="aram-icon">
-                                    <div class="dash-champ-info">
-                                        <div class="dash-champ-stats">${c.games}G • ${((c.wins / c.games) * 100).toFixed(0)}%</div>
-                                    </div>
-                                </div>
-                            `,
-                              )
-                              .join("")}
-                        </div>
-
-                        <span class="dash-label" style="margin-top:24px;">Overall Records (All-Time)</span>
-                        <div class="dash-analytics-grid" style="grid-template-columns: repeat(2, 1fr); gap: 8px;">
-                            <div class="dash-analytic-item" style="padding: 8px 12px;">
-                                <span class="analytic-label">Lifetime Diversity</span>
-                                <span class="analytic-value">${dashData.lifetimeDiversity} Unique Champions Played</span>
-                            </div>
-                            <div class="dash-analytic-item" style="padding: 8px 12px;">
-                                <span class="analytic-label">Average Game Length (${dashData.lifetimeAvgLen} Minutes)</span>
-                                <span class="analytic-value">${dashData.lifetimeTimeStr} in Mayhem</span>
-                            </div>
-                        </div>
-                        <div class="dash-champs" style="margin-top: 8px; justify-content: flex-start; gap: 6px;">
-                            ${dashData.lifetimeTopChamps
-                              .map(
-                                (c) => `
-                                <div style="position: relative; width: 32px; height: 32px;" title="${c.games} Games Played">
-                                    <img src="/lol-game-data/assets/v1/champion-icons/${c.id}.png" style="width: 32px; height: 32px; border-radius: 4px; border: 1px solid #3a4a55;">
-                                    <div style="position: absolute; bottom: -2px; right: -2px; background: #010a13; font-size: 8px; padding: 1px 3px; border: 1px solid #785a28; color: #f0e6d2; border-radius: 2px;">${c.games}</div>
-                                </div>
-                            `,
-                              )
-                              .join("")}
-                            <span class="analytic-label" style="align-self: center; margin-left: 5px;">All-Time Favorites</span>
-                        </div>
-                    </div>
-                    <div class="dash-footer">Cached: ${dashData.totalGames} games &nbsp;•&nbsp; Updated: ${new Date(dashData.savedAt).toLocaleTimeString()}</div>
-                </div>
-            `;
-  }
-
-  const infoHtml = `
-            <div class="home-info">
-                <div class="info-section">
-                    <span class="dash-label">Pro Tips</span>
-                    <ul class="info-tips">
-                        <li><b>Global Champions:</b> Aggregates data from all players you've encountered. Compare Champion stats to the overall average.</li>
-                        <li><b>Investigator:</b> Check any Riot ID to see if they are a versatile threat or a lucky one-trick.</li>
-                        <li><b>Laplace Smoothing:</b> Favors consistency over luck. 10W-2L ranks higher than 1W-0L to filter noise.</li>
-                    </ul>
-                </div>
-                <div class="info-section branding" style="margin-top: auto; padding-top: 15px; border-top: 1px solid rgba(120,90,40,0.1);">
-                    <span class="dash-label">About Mayhem Doctor</span>
-                    <div class="branding-content">
-                        <div class="branding-title" style="font-size: 16px;">Mayhem Doctor</div>
-                        <div class="branding-dev">by Reformed Doge</div>
-                        <div class="branding-version">v${getCurrentVersion()} ${hasUpdate() ? '• <span style="color: #c8aa6e; font-weight: 600;">✦ New Update</span>' : ""} • <a href="https://github.com/ReformedDoge/Mayhem-Doctor" target="_blank" style="color: #c8aa6e; text-decoration: none; cursor: pointer;" onmouseover="this.style.textDecoration='underline'" onmouseout="this.style.textDecoration='none'">GitHub</a></div>
-                    </div>
+    const infoHtml = `
+        <div class="home-info">
+            <div class="info-section">
+                <span class="dash-label">Pro Tips</span>
+                <ul class="info-tips">
+                    <li><b>Global Champions:</b> Aggregates data from all players you've encountered.</li>
+                    <li><b>Investigator:</b> Check any Riot ID to see performance analytics.</li>
+                    <li><b>Laplace Smoothing:</b> Favors consistency over luck in the analytics tabs.</li>
+                </ul>
+            </div>
+            <div class="info-section branding" style="margin-top: auto; padding-top: 15px; border-top: 1px solid rgba(120,90,40,0.1);">
+                <div class="branding-content">
+                    <div class="branding-title">Mayhem Doctor</div>
+                    <div class="branding-dev">by Reformed Doge</div>
+                    <div class="branding-version">v${getCurrentVersion()} ${hasUpdate() ? '• <span style="color: #c8aa6e;">✦ Update</span>' : ""}</div>
                 </div>
             </div>
-        `;
+        </div>
+    `;
 
-  modalContent.innerHTML = `
-            <div class="aram-modal-close">&times;</div>
+    modalContent.innerHTML = `
+            <div class="aram-modal-close" title="Close">&times;</div>
             <h2 style="margin-bottom: 20px;">Mayhem Doctor</h2>
             <div class="home-layout">
                 <div class="home-left">
@@ -208,8 +187,8 @@ export async function openCommandBarModal() {
                             <span class="dash-label">Analysis Settings</span>
                             <label class="mi-label" for="cb-game-count" style="margin-top: 5px;">Number of Games</label>
                             <div class="mi-slider-row">
-                                <input id="cb-slider" class="mi-slider" type="range" min="10" max="400" value="50">
-                                <input id="cb-game-count" class="aram-number-input" type="number" value="50" min="10" max="400">
+                                <input id="cb-slider" class="mi-slider" type="range" min="10" max="1000" value="${currentSavedCount}">
+                                <input id="cb-game-count" class="aram-number-input" type="number" value="${currentSavedCount}" min="10" max="1000">
                             </div>
                         </div>
                         <div class="cb-picker-buttons" style="margin-top: 15px;">
@@ -231,41 +210,39 @@ export async function openCommandBarModal() {
                 </div>
             </div>
         `;
-  modalContent.querySelector(".aram-modal-close").onclick = () =>
-    modalContent.parentElement.remove();
 
-  const slider = modalContent.querySelector("#cb-slider");
-  const numInput = modalContent.querySelector("#cb-game-count");
-  slider.oninput = () => {
-    numInput.value = slider.value;
-  };
-  numInput.oninput = () => {
-    slider.value = numInput.value;
-  };
+    modalContent.querySelector(".aram-modal-close").onclick = () =>
+      modalContent.parentElement.remove();
 
-  modalContent.querySelector("#cb-self-btn").onclick = () => {
-    const count = parseInt(numInput.value) || 50;
-    runAndRender(startSelfAnalysis, [count], "My Mayhem Stats");
-  };
+    const slider = modalContent.querySelector("#cb-slider");
+    const numInput = modalContent.querySelector("#cb-game-count");
+    slider.oninput = () => { numInput.value = slider.value; };
+    numInput.oninput = () => { slider.value = numInput.value; };
 
-  modalContent.querySelector("#cb-other-btn").onclick = () => {
-    modalContent.querySelector("#cb-riot-id-row").style.display = "";
-    modalContent.querySelector("#cb-other-btn").style.display = "none";
-  };
+    modalContent.querySelector("#cb-self-btn").onclick = () => {
+      const count = parseInt(numInput.value) || 50;
+      updateSetting('lastAnalysisCount', count);
+      runAndRender(startSelfAnalysis, [count], "My Mayhem Stats");
+    };
 
-  modalContent.querySelector("#cb-investigate-btn").onclick = () => {
-    const riotId = modalContent.querySelector("#cb-riot-id").value.trim();
-    const count = parseInt(numInput.value) || 50;
-    if (!riotId || !riotId.includes("#")) {
-      Toast.error("Please enter a valid Riot ID in the format GameName#TAG.");
-      return;
-    }
-    runAndRender(
-      startInvestigatorAnalysis,
-      [riotId, count],
-      `${riotId} — Mayhem Stats`,
-    );
-  };
+    modalContent.querySelector("#cb-other-btn").onclick = () => {
+      modalContent.querySelector("#cb-riot-id-row").style.display = "";
+      modalContent.querySelector("#cb-other-btn").style.display = "none";
+    };
+
+    modalContent.querySelector("#cb-investigate-btn").onclick = () => {
+      const riotId = modalContent.querySelector("#cb-riot-id").value.trim();
+      const count = parseInt(numInput.value) || 50;
+      if (!riotId || !riotId.includes("#")) {
+        Toast.error("Please enter a valid Riot ID in the format GameName#TAG.");
+        return;
+      }
+      updateSetting('lastAnalysisCount', count); 
+      runAndRender(startInvestigatorAnalysis, [riotId, count], `${riotId} — Mayhem Stats`);
+    };
   }
+
+  // initialization
+  await loadSettings();
   renderHome();
 }

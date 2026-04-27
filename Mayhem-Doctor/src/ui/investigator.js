@@ -6,12 +6,15 @@
 import { startSelfAnalysis, startInvestigatorAnalysis } from '../analysis.js';
 import { createModal, displayStats } from './modal.js';
 import { renderStatsInto } from './tabs.js';
+import { getSettings, updateSetting } from './settings.js';
 
 export const INVESTIGATOR_TAB_ID   = 'mi-profile-tab';
 export const INVESTIGATOR_PANEL_ID = 'mi-profile-panel';
 
 //  Investigator dashboard UI 
 export function buildInvestigatorDashboard() {
+    const settings = getSettings();
+    const savedCount = settings.lastAnalysisCount || 50;
     const root = document.createElement('div');
     root.className = 'mi-dashboard';
 
@@ -24,8 +27,8 @@ export function buildInvestigatorDashboard() {
             <div class="mi-input-group">
                 <label class="mi-label" for="mi-game-count">Games to Analyse</label>
                 <div class="mi-slider-row">
-                    <input id="mi-slider" class="mi-slider" type="range" min="10" max="400" value="50">
-                    <input id="mi-game-count" class="aram-number-input" type="number" value="50" min="10" max="400">
+                    <input id="mi-slider" class="mi-slider" type="range" min="10" max="400" value="${savedCount}">
+                    <input id="mi-game-count" class="aram-number-input" type="number" value="${savedCount}" min="10" max="1000">
                 </div>
             </div>
             <button id="mi-investigate-btn" class="aram-btn-start mi-btn">Investigate</button>
@@ -57,6 +60,7 @@ export function buildInvestigatorDashboard() {
             Toast.error('Please enter a valid Riot ID in the format GameName#TAG.');
             return;
         }
+        updateSetting('lastAnalysisCount', count); 
 
         resultsEl.innerHTML = '';
         btn.disabled    = true;
@@ -161,14 +165,16 @@ export function injectInvestigatorTab() {
 }
 
 export function injectMatchHistoryButton() {
+    const settings = getSettings();
+    const savedCount = settings.lastAnalysisCount || 50;
     const mainViewport   = document.querySelector('section.rcp-fe-viewport-main');
     const injectionPoint = mainViewport ? mainViewport.querySelector('.match-history-left-title') : null;
     if (!injectionPoint || mainViewport.querySelector('.aram-controls-wrapper')) return;
 
     const wrapper  = document.createElement('div');  wrapper.className  = 'aram-controls-wrapper';
     const btn      = document.createElement('button'); btn.textContent   = 'Mayhem!'; btn.className = 'aram-btn-start';
-    const slider   = document.createElement('input');  slider.type       = 'range'; slider.min = '10'; slider.max = '400'; slider.value = 50;
-    const numInput = document.createElement('input');  numInput.type     = 'number'; numInput.value = 50; numInput.className = 'aram-number-input';
+    const slider   = document.createElement('input');  slider.type       = 'range'; slider.min = '10'; slider.max = '1000'; slider.value = savedCount;
+    const numInput = document.createElement('input');  numInput.type     = 'number'; numInput.value = savedCount; numInput.className = 'aram-number-input';
     slider.oninput   = () => { numInput.value = slider.value; };
     numInput.oninput = () => { slider.value   = numInput.value; };
     wrapper.append(slider, numInput, btn);
@@ -176,6 +182,7 @@ export function injectMatchHistoryButton() {
 
     btn.onclick = () => {
         const count        = parseInt(numInput.value) || 50;
+        updateSetting('lastAnalysisCount', count); 
         const modalContent = createModal();
         modalContent.innerHTML = '<h2>Analyzing…</h2><p id="analysis-status">Initializing…</p>';
 
