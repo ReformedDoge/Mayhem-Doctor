@@ -3,6 +3,7 @@
  */
 
 import { ITEM_DATA } from '../lcu.js';
+import { smoothedWinRate } from '../analysis.js';
 import { createInteractiveTable } from './table.js';
 
 //  Item chip 
@@ -19,8 +20,9 @@ export function itemChip(id) {
 
 //  Combo analysis 
 /**
- * Finds the top N sequential item build paths of exactly N items.
- * Respects pre-sorted orderedBuild from parseGame
+ * Finds the top N sequential item build paths of exactly `size` items.
+ * Respects pre-sorted orderedBuild from parseGame / deriveOrderedBuild.
+ * Win rates are Laplace-smoothed so small-n combos don't dominate.
  */
 export function buildSeenItemCombos(games, size, topN = 3, minGames = 2) {
     const map = {};
@@ -46,7 +48,7 @@ export function buildSeenItemCombos(games, size, topN = 3, minGames = 2) {
     });
     return Object.values(map)
         .filter(d => d.games >= minGames)
-        .map(d => ({ ...d, winRate: d.wins / d.games * 100 }))
+        .map(d => ({ ...d, winRate: smoothedWinRate(d.wins, d.games) }))
         .sort((a, b) => b.winRate - a.winRate || b.games - a.games)
         .slice(0, topN);
 }
@@ -65,12 +67,12 @@ export function renderItemComboCards(combos, size) {
         const card = document.createElement('div');
         card.className = 'sc-combo-card';
         const wrClass = combo.winRate >= 60 ? 'aram-win-high' : combo.winRate <= 40 ? 'aram-win-low' : 'aram-winrate';
-        const chips = combo.ids.map(id => itemChip(id)).join('<span class="sc-combo-arrow" style="opacity:0.6; margin:0 4px; font-size:12px;">➔</span>');
+        const chips = combo.ids.map(id => itemChip(id)).join('<span class="sc-combo-arrow" style="opacity:0.6; margin:0 4px; font-size:12px;">&#10132;</span>');
         card.innerHTML = `
             <div class="sc-combo-rank">#${rank + 1}</div>
             <div class="sc-combo-chips">${chips}</div>
             <div class="sc-combo-meta">
-                <span class="${wrClass}">${combo.winRate.toFixed(1)}% WR</span>
+                <span class="${wrClass}">${combo.winRate.toFixed(1)}%</span>
                 <span class="sc-combo-games">${combo.games}g</span>
             </div>`;
         wrap.appendChild(card);
@@ -108,7 +110,7 @@ export function buildItemSection(games, cItemStats) {
 
     const itemRows = Object.entries(cItemStats).map(([iId, d]) => {
         const info = ITEM_DATA[iId] || { name: `Item ${iId}`, icon: '' };
-        return { id: iId, name: info.name, icon: info.icon, ...d, winRate: d.wins / d.games * 100 };
+        return { id: iId, name: info.name, icon: info.icon, ...d, winRate: smoothedWinRate(d.wins, d.games) };
     }).sort((a, b) => b.games - a.games);
 
     if (itemRows.length === 0) {
