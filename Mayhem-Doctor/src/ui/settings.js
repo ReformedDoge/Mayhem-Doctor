@@ -11,6 +11,10 @@ let CURRENT_VERSION = [1, 0, 0]; // Fallback, will be synced from index.js metad
 const DEFAULT_SETTINGS = {
   injectMatchHistoryButton: true,
   injectInvestigatorTab: true,
+  openModalInNewWindow: false,
+  popoutWindowSize: "standard",
+  popoutWindowWidth: 1360,
+  popoutWindowHeight: 860,
   checkUpdates: true,
   dashboardLookback: 20,
   lastAnalysisCount: 50,
@@ -203,6 +207,137 @@ export function renderSettingsTab(callbacks = {}) {
     return row;
   }
 
+  function normalisePopupDimension(value, fallback, min, max) {
+    const parsed = parseInt(value, 10);
+    if (!Number.isFinite(parsed)) return fallback;
+    return Math.min(max, Math.max(min, parsed));
+  }
+
+  function makeWindowSizeControl() {
+    const settingKey = "popoutWindowSize";
+    const row = document.createElement("div");
+    row.className = "md-settings-row";
+
+    const textWrap = document.createElement("div");
+    textWrap.className = "md-settings-row-text";
+
+    const lbl = document.createElement("div");
+    lbl.className = "md-settings-row-label";
+    lbl.textContent = "Window size";
+
+    const desc = document.createElement("div");
+    desc.className = "md-settings-row-desc";
+    desc.textContent = "Sets the default size for the pop out window.";
+
+    textWrap.appendChild(lbl);
+    textWrap.appendChild(desc);
+
+    const controlWrap = document.createElement("div");
+    controlWrap.className = "md-settings-control-row";
+
+    const select = document.createElement("select");
+    select.className = "mi-text-input";
+    select.classList.add("md-settings-window-select");
+
+    const options = [
+      { label: "Compact (1170 x 770)", value: "compact" },
+      { label: "Standard (1360 x 860)", value: "standard" },
+      { label: "Large (1440 x 900)", value: "large" },
+      { label: "Custom", value: "custom" },
+    ];
+
+    options.forEach((opt) => {
+      const optionEl = document.createElement("option");
+      optionEl.value = opt.value;
+      optionEl.textContent = opt.label;
+      optionEl.selected = _settings[settingKey] === opt.value;
+      select.appendChild(optionEl);
+    });
+
+    if (!options.some((opt) => opt.value === _settings[settingKey])) {
+      _settings[settingKey] = "standard";
+    }
+
+    select.value = _settings[settingKey];
+
+    const widthInput = document.createElement("input");
+    widthInput.type = "number";
+    widthInput.className = "aram-number-input md-settings-dim-input";
+    widthInput.min = "800";
+    widthInput.max = "3840";
+    widthInput.value = normalisePopupDimension(
+      _settings.popoutWindowWidth,
+      1360,
+      800,
+      3840,
+    );
+
+    const separator = document.createElement("span");
+    separator.className = "md-settings-dim-sep";
+    separator.textContent = "x";
+
+    const heightInput = document.createElement("input");
+    heightInput.type = "number";
+    heightInput.className = "aram-number-input md-settings-dim-input";
+    heightInput.min = "600";
+    heightInput.max = "2160";
+    heightInput.value = normalisePopupDimension(
+      _settings.popoutWindowHeight,
+      800,
+      600,
+      2160,
+    );
+
+    const syncCustomState = () => {
+      const isCustom = select.value === "custom";
+      widthInput.style.display = isCustom ? "" : "none";
+      heightInput.style.display = isCustom ? "" : "none";
+      separator.style.display = isCustom ? "" : "none";
+    };
+
+    select.onchange = () => {
+      setSetting(settingKey, select.value);
+      syncCustomState();
+    };
+
+    widthInput.onchange = () => {
+      const value = normalisePopupDimension(widthInput.value, 1360, 800, 3840);
+      widthInput.value = value;
+      setSetting("popoutWindowWidth", value);
+    };
+
+    heightInput.onchange = () => {
+      const value = normalisePopupDimension(heightInput.value, 800, 600, 2160);
+      heightInput.value = value;
+      setSetting("popoutWindowHeight", value);
+    };
+
+    syncCustomState();
+
+    window.addEventListener("md-settings-sync-window", () => {
+      select.value = _settings.popoutWindowSize || "standard";
+      widthInput.value = _settings.popoutWindowWidth || 1360;
+      heightInput.value = _settings.popoutWindowHeight || 860;
+      syncCustomState();
+    });
+
+    controlWrap.appendChild(select);
+    controlWrap.appendChild(widthInput);
+    controlWrap.appendChild(separator);
+    controlWrap.appendChild(heightInput);
+
+    row.appendChild(textWrap);
+    row.appendChild(controlWrap);
+    return { row, select, widthInput, heightInput };
+  }
+
+  function setWindowSizeControlDisabled(control, disabled) {
+    control.row.classList.toggle("md-settings-row-disabled", disabled);
+    control.select.disabled = disabled;
+    control.widthInput.disabled = disabled;
+    control.heightInput.disabled = disabled;
+  }
+
   root.appendChild(
     makeToggle(
       "Match History Button",
@@ -220,6 +355,24 @@ export function renderSettingsTab(callbacks = {}) {
       callbacks.onInjectInvestigator,
     ),
   );
+
+  const windowTitle = document.createElement("h3");
+  windowTitle.className = "md-settings-section-title";
+  windowTitle.textContent = "Window behavior";
+  root.appendChild(windowTitle);
+
+  const windowSizeControl = makeWindowSizeControl();
+
+  const popoutToggle = makeToggle(
+    "Pop out window",
+    "Opens in a separate window instead of an in-client modal.",
+    "openModalInNewWindow",
+    (enabled) => setWindowSizeControlDisabled(windowSizeControl, !enabled),
+  );
+  root.appendChild(popoutToggle);
+
+  root.appendChild(windowSizeControl.row);
+  setWindowSizeControlDisabled(windowSizeControl, !_settings.openModalInNewWindow);
 
   // Dashboard Settings
   const dashTitle = document.createElement("h3");

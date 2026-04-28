@@ -52,7 +52,11 @@ async function saveExcluded(excludedSet) {
  * @param {function} onChange           Called with (excludedSet: Set<string>) whenever selection changes
  * @returns {Promise<HTMLElement>}      The floating wrapper element, append anywhere
  */
-export async function createPatchFilter(allVersionStrings, onChange) {
+export async function createPatchFilter(
+    allVersionStrings,
+    onChange,
+    doc = document,
+) {
     // Deduplicate + convert to Major.Minor labels
     const allPatches   = sortedPatches(new Set(allVersionStrings.map(toPatchLabel)));
     const excludedSet  = await loadExcluded();
@@ -66,14 +70,14 @@ export async function createPatchFilter(allVersionStrings, onChange) {
     const totalCount   = allPatches.length;
 
     //  DOM 
-    const wrapper = document.createElement('div');
+    const wrapper = doc.createElement('div');
     wrapper.className = 'pf-wrapper';
 
-    const pill = document.createElement('button');
+    const pill = doc.createElement('button');
     pill.className = 'pf-pill';
     pill.title    = 'Filter by patch';
 
-    const dropdown = document.createElement('div');
+    const dropdown = doc.createElement('div');
     dropdown.className = 'pf-dropdown pf-hidden';
 
     wrapper.appendChild(pill);
@@ -96,7 +100,7 @@ export async function createPatchFilter(allVersionStrings, onChange) {
         dropdown.innerHTML = '';
 
         // Header row: "Patches" label + "All / None" toggles
-        const header = document.createElement('div');
+        const header = doc.createElement('div');
         header.className = 'pf-header';
         header.innerHTML = `
             <span class="pf-header-label">Patches</span>
@@ -127,10 +131,10 @@ export async function createPatchFilter(allVersionStrings, onChange) {
         dropdown.querySelectorAll('.pf-row').forEach(el => el.remove());
 
         allPatches.forEach(patch => {
-            const row = document.createElement('label');
+            const row = doc.createElement('label');
             row.className = 'pf-row';
 
-            const cb = document.createElement('input');
+            const cb = doc.createElement('input');
             cb.type    = 'checkbox';
             cb.checked = !excludedSet.has(patch);
             cb.onclick = (e) => e.stopPropagation();
@@ -141,7 +145,7 @@ export async function createPatchFilter(allVersionStrings, onChange) {
                 commit();
             };
 
-            const label = document.createElement('span');
+            const label = doc.createElement('span');
             label.className   = 'pf-patch-label';
             label.textContent = patch;
 
@@ -171,7 +175,7 @@ export async function createPatchFilter(allVersionStrings, onChange) {
     };
 
     // Close on outside click
-    document.addEventListener('click', (e) => {
+    doc.addEventListener('click', (e) => {
         if (!wrapper.contains(e.target)) dropdown.classList.add('pf-hidden');
     });
 

@@ -600,7 +600,7 @@ export async function getHomeDashboardData() {
           b.games - a.games
         );
       })
-      .slice(0, 4);
+      .slice(0, 8);
 
     /* .sort((a, b) => b.games - a.games || (b.wins / b.games) - (a.wins / a.games))
       .slice(0, 4); */
@@ -627,7 +627,7 @@ export async function getHomeDashboardData() {
 
     const lifetimeTopChamps = Object.values(allTimeChampStats)
       .sort((a, b) => b.games - a.games || b.wins / b.games - a.wins / a.games)
-      .slice(0, 5);
+      .slice(0, 6);
 
     const gamesCount = stats.wins + stats.losses;
     const totalMinutes = Math.max(1, stats.duration / 60);

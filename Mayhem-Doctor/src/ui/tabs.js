@@ -168,27 +168,32 @@ export function renderGeneralTab(stats, onChampClick) {
 }
 
 //  Match history tab
-export function renderHistoryTab(history, selectedChamps, onFilterChange) {
-  const container = document.createElement("div");
+export function renderHistoryTab(
+  history,
+  selectedChamps,
+  onFilterChange,
+  doc = document,
+) {
+  const container = doc.createElement("div");
   container.className = "mh-root";
 
   // Filter UI
-  const filterContainer = document.createElement("div");
+  const filterContainer = doc.createElement("div");
   filterContainer.className = "mh-filter-container";
 
-  const chipsContainer = document.createElement("div");
+  const chipsContainer = doc.createElement("div");
   chipsContainer.className = "mh-chips-container";
 
-  const inputWrapper = document.createElement("div");
+  const inputWrapper = doc.createElement("div");
   inputWrapper.className = "mh-filter-input-wrapper";
 
-  const filterInput = document.createElement("input");
+  const filterInput = doc.createElement("input");
   filterInput.className = "mh-filter-input";
   filterInput.placeholder = "Filter by champions (e.g. Malphite, Jinx)...";
   filterInput.spellcheck = false;
   inputWrapper.appendChild(filterInput);
 
-  const dropdown = document.createElement("div");
+  const dropdown = doc.createElement("div");
   dropdown.className = "mh-dropdown";
 
   filterContainer.appendChild(chipsContainer);
@@ -200,7 +205,7 @@ export function renderHistoryTab(history, selectedChamps, onFilterChange) {
     chipsContainer.innerHTML = "";
     selectedChamps.forEach((id) => {
       const name = CHAMPION_DATA[id] || `ID ${id}`;
-      const chip = document.createElement("div");
+      const chip = doc.createElement("div");
       chip.className = "mh-chip";
       chip.innerHTML = `
                 <img src="/lol-game-data/assets/v1/champion-icons/${id}.png" style="width:16px;height:16px;border-radius:2px;">
@@ -237,7 +242,7 @@ export function renderHistoryTab(history, selectedChamps, onFilterChange) {
     }
 
     filtered.forEach((c) => {
-      const item = document.createElement("div");
+      const item = doc.createElement("div");
       item.className = "mh-dropdown-item";
       item.innerHTML = `
                 <img src="/lol-game-data/assets/v1/champion-icons/${c.id}.png">
@@ -258,7 +263,7 @@ export function renderHistoryTab(history, selectedChamps, onFilterChange) {
   filterInput.oninput = () => renderDropdown(filterInput.value.trim());
   filterInput.onfocus = () => renderDropdown(filterInput.value.trim());
 
-  document.addEventListener("click", (e) => {
+  doc.addEventListener("click", (e) => {
     if (!filterContainer.contains(e.target)) dropdown.style.display = "none";
   });
 
@@ -278,7 +283,7 @@ export function renderHistoryTab(history, selectedChamps, onFilterChange) {
   }));
 
   if (historyData.length === 0) {
-    const empty = document.createElement("div");
+    const empty = doc.createElement("div");
     empty.className = "sc-empty";
     empty.style.padding = "40px";
     empty.textContent = "No matches found for the selected filter.";
@@ -679,18 +684,27 @@ export async function renderStatsInto(
   fullHistory,
   opts = {},
 ) {
-  const { showClose = false, showHome = false, onHome = null, title = "Mayhem Analysis" } = opts;
+  const {
+    showClose = false,
+    showHome = false,
+    onHome = null,
+    onClose = null,
+    title = "Mayhem Analysis",
+  } = opts;
   const uid = `aram-tabs-${Date.now()}`;
+  const doc = targetEl.ownerDocument || document;
 
-  const settings = await loadSettings();
+  await loadSettings();
   checkForUpdates();
 
   // Champion Filter State
   const selectedChamps = new Set();
 
-  targetEl.innerHTML = `
-        ${showHome ? '<div class="aram-modal-home" title="Return to Dashboard"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg></div>' : ""}
-        ${showClose ? '<div class="aram-modal-close" title="Close">&times;</div>' : ""}
+    targetEl.innerHTML = `
+        <div class="aram-modal-tools">
+            ${showHome ? '<div class="aram-modal-home" title="Return to Dashboard"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg></div>' : ""}
+            ${showClose ? '<div class="aram-modal-close" title="Close">&times;</div>' : ""}
+        </div>
         <h2>${title}</h2>
         <div class="aram-tab-bar">
             <div class="aram-tab-item active"    data-tab="${uid}-general">General Stats</div>
@@ -713,7 +727,7 @@ export async function renderStatsInto(
 
   targetEl.style.position = "relative";
 
-  const footer = document.createElement("div");
+  const footer = doc.createElement("div");
   footer.className = "aram-credits";
   footer.innerHTML = "Mayhem Doctor &nbsp;&middot;&nbsp; by Reformed Doge";
   targetEl.appendChild(footer);
@@ -732,8 +746,10 @@ export async function renderStatsInto(
   });
 
   if (showClose) {
-    targetEl.querySelector(".aram-modal-close").onclick = () =>
-      targetEl.parentElement.remove();
+    targetEl.querySelector(".aram-modal-close").onclick =
+      typeof onClose === "function"
+        ? onClose
+        : () => targetEl.parentElement?.remove();
   }
 
   if (showHome && onHome) {
@@ -767,7 +783,7 @@ export async function renderStatsInto(
     const refreshHistory = () => {
       historyEl.innerHTML = "";
       historyEl.appendChild(
-        renderHistoryTab(filtered, selectedChamps, refreshHistory),
+        renderHistoryTab(filtered, selectedChamps, refreshHistory, doc),
       );
     };
 
@@ -802,8 +818,14 @@ export async function renderStatsInto(
     (excluded) => {
       renderTabs(excluded);
     },
+    doc,
   );
-  targetEl.appendChild(filterEl);
+  const toolsContainer = targetEl.querySelector(".aram-modal-tools");
+  if (toolsContainer) {
+    toolsContainer.prepend(filterEl);
+  } else {
+    targetEl.appendChild(filterEl);
+  }
 
   renderTabs(excludedSet);
 }

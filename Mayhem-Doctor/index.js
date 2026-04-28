@@ -1,6 +1,6 @@
 /**
  * @name Mayhem-Doctor
- * @version 1.1.0
+ * @version 1.2.0
  * @author SnoozeFest - github@ReformedDoge
  * @description Aram Mayhem Plugin for Pengu Loader.
  * @link https://github.com/ReformedDoge
@@ -12,13 +12,21 @@ import aramIcon from "./src/assets/aram.svg?raw";
 
 import { loadStaticData } from "./src/lcu.js";
 import { readCacheIndex, clearAllCache } from "./src/cache.js";
-import { openCommandBarModal } from "./src/ui/modal.js";
+import {
+  openCommandBarModal,
+  hasOpenMayhemWindow,
+  closeMayhemWindow,
+} from "./src/ui/modal.js";
 import {
   injectMatchHistoryButton,
   injectInvestigatorTab,
   INVESTIGATOR_PANEL_ID,
 } from "./src/ui/investigator.js";
-import { loadSettings, checkForUpdates } from "./src/ui/settings.js";
+import {
+  loadSettings,
+  checkForUpdates,
+  getSettings,
+} from "./src/ui/settings.js";
 
 export async function load() {
   // Inject styles
@@ -30,12 +38,13 @@ export async function load() {
   // creating a circular import through the UI layer.
   window.__mdCacheRef = { clearAllCache };
 
-  const settings = await loadSettings();
-  if (settings.checkUpdates) checkForUpdates();
+  await loadSettings();
+  if (getSettings().checkUpdates) checkForUpdates();
 
   await loadStaticData();
 
   const observer = new MutationObserver(() => {
+    const settings = getSettings();
     if (settings.injectMatchHistoryButton) injectMatchHistoryButton();
     if (settings.injectInvestigatorTab) injectInvestigatorTab();
     
@@ -99,8 +108,7 @@ export async function load() {
   window.addEventListener("keydown", (e) => {
     if (e.altKey && e.code === "KeyX") {
       e.preventDefault();
-      const existing = document.querySelector(".aram-modal-overlay");
-      if (existing) existing.remove();
+      if (hasOpenMayhemWindow()) closeMayhemWindow();
       else openCommandBarModal();
     }
   });
