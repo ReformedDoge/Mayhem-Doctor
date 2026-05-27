@@ -10,8 +10,17 @@
 import { STYLES } from "./src/assets/styles.js";
 import aramIcon from "./src/assets/aram.svg?raw";
 
+import { initResolver } from "./src/resolver.js";
+import {
+  setFileCacheEnabled,
+  isGlobalStatsDirty,
+  saveGlobalStatsToFile,
+  readGlobalStatsFromFile,
+  getExpectedFilePath,
+} from "./src/fileCache.js";
 import { loadStaticData } from "./src/lcu.js";
 import { readCacheIndex, clearAllCache } from "./src/cache.js";
+import { clearAllGlobalData, initGlobalFileCache } from "./src/globalCache.js";
 import {
   openCommandBarModal,
   hasOpenMayhemWindow,
@@ -29,17 +38,26 @@ import {
 } from "./src/ui/settings.js";
 
 export async function load() {
+  initResolver(import.meta.url);
+
   // Inject styles
   const styleEl = document.createElement("style");
   styleEl.textContent = STYLES;
   document.head.appendChild(styleEl);
 
-  // Expose clearAllCache so the settings tab renderer can call it without
-  // creating a circular import through the UI layer.
-  window.__mdCacheRef = { clearAllCache };
+  // Expose clearAllCache / clearAllGlobalData so the settings tab renderer can call
+  // them without creating a circular import through the UI layer.
+  // Also expose file cache helpers for the settings UI path display.
+  window.__mdCacheRef = { clearAllCache, clearAllGlobalData };
+  window.__mdFileCacheRef = { isGlobalStatsDirty, saveGlobalStatsToFile, readGlobalStatsFromFile, getExpectedFilePath };
 
   await loadSettings();
   if (getSettings().checkUpdates) checkForUpdates();
+
+  // Apply file cache setting before loading static data so the flag is ready
+  // when initGlobalFileCache fetches the file.
+  setFileCacheEnabled(getSettings().useFileGlobalCache);
+  await initGlobalFileCache();
 
   await loadStaticData();
 
