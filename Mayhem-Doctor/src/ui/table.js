@@ -59,6 +59,16 @@ export function createInteractiveTable(columns, data, defaultSortKey = null, def
         tbody.innerHTML = '';
         data.sort((a, b) => {
             let valA = a[sortKey], valB = b[sortKey];
+
+            // Smart Sort for Win Rate: Priority = WR + (log(Games) * 5)
+            if (sortKey === 'winRate' && a.games !== undefined && b.games !== undefined) {
+                const scoreA = valA + (Math.log(Math.max(1, a.games)) * 5);
+                const scoreB = valB + (Math.log(Math.max(1, b.games)) * 5);
+                if (scoreA !== scoreB) return sortAsc ? scoreA - scoreB : scoreB - scoreA;
+                // Tie-breaker: pure games
+                return sortAsc ? a.games - b.games : b.games - a.games;
+            }
+
             if (typeof valA === 'string') valA = valA.toLowerCase();
             if (typeof valB === 'string') valB = valB.toLowerCase();
             return valA < valB ? (sortAsc ? -1 : 1) : valA > valB ? (sortAsc ? 1 : -1) : 0;

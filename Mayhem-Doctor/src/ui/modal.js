@@ -16,6 +16,11 @@ import {
   updateSetting,
   getSettings,
 } from "./settings.js";
+import { cancelCrawl, isCrawlRunning } from "./crawler.js";
+
+// Secret sequence state for modal dashboard
+let _mdHomeSecretIndex = 0;
+const _mdHomeSecretGoal = "MAYHEMDOCTOR";
 
 const POPUP_WINDOW_NAME = "mayhemDoctorPopout";
 const POPUP_WINDOW_STYLES = `
@@ -197,6 +202,7 @@ function bindPopupLifecycle(win) {
 
   const clearRef = () => {
     if (popupWindowRef === win) popupWindowRef = null;
+    if (isCrawlRunning()) cancelCrawl();
   };
 
   win.addEventListener("beforeunload", clearRef);
@@ -218,13 +224,19 @@ function createInlineHost(title = "Mayhem Doctor") {
   document.body.appendChild(overlay);
 
   overlay.onclick = (e) => {
-    if (e.target === overlay) overlay.remove();
+    if (e.target === overlay) {
+      overlay.remove();
+      if (isCrawlRunning()) cancelCrawl();
+    }
   };
 
   return {
     mode: "inline",
     content,
-    close: () => overlay.remove(),
+    close: () => {
+      overlay.remove();
+      if (isCrawlRunning()) cancelCrawl();
+    },
     focus: () => window.focus(),
     isOpen: () => document.body.contains(overlay),
     setTitle: () => {},
@@ -273,6 +285,7 @@ function createPopupHost(title = "Mayhem Doctor") {
         win.close();
       } catch {}
       if (popupWindowRef === win) popupWindowRef = null;
+      if (isCrawlRunning()) cancelCrawl();
     },
     focus: () => {
       try {
@@ -311,6 +324,7 @@ export function hasOpenMayhemWindow() {
 export function closeMayhemWindow() {
   removeInlineModal();
   closePopupWindow();
+  if (isCrawlRunning()) cancelCrawl();
 }
 
 export async function displayStats(
@@ -357,7 +371,9 @@ export async function openCommandBarModal() {
     modalContent.classList.remove("aram-modal-home-screen");
     setHostTitle(title);
     modalContent.innerHTML = `
-            <div class="aram-modal-close" title="Close">&times;</div>
+            <div class="aram-modal-tools">
+                <div class="aram-modal-close" title="Close">&times;</div>
+            </div>
             <h2 id="cb-title">${title}</h2>
             <div id="cb-status-bar" class="mi-status-bar mi-status-info"></div>
         `;
@@ -393,6 +409,7 @@ export async function openCommandBarModal() {
 
     setHostTitle("Mayhem Doctor");
     modalContent.classList.add("aram-modal-home-screen");
+    modalContent.setAttribute("data-md-unlocked", getSettings().enableGlobalCrawl);
 
     const settings = getSettings();
     const currentSavedCount = settings.lastAnalysisCount || 50;
@@ -510,15 +527,81 @@ export async function openCommandBarModal() {
                     <li><b>Laplace Smoothing:</b> Favors consistency over luck in the analytics tabs.</li>
                 </ul>
             </div>
-            <div class="info-section branding" style="margin-top: auto; padding-top: 15px; border-top: 1px solid rgba(120,90,40,0.1);">
-                <div class="branding-content">
-                    <div class="branding-title">Mayhem Doctor</div>
-                    <div class="branding-dev">by Reformed Doge</div>
-                    <div class="branding-version">v${getCurrentVersion()} ${hasUpdate() ? '&bull; <span style="color: #c8aa6e; font-weight: 600;">Update Available</span>' : ""} &bull; <a href="https://github.com/ReformedDoge/Mayhem-Doctor" target="_blank" style="color: #c8aa6e; text-decoration: none;">GitHub</a></div>
-                </div>
-            </div>
+            <div id="md-branding-placeholder"></div>
         </div>
     `;
+
+    const infoSection = document.createElement("div");
+    infoSection.className = "info-section branding";
+    infoSection.style.cssText = "margin-top: auto; padding-top: 15px; border-top: 1px solid rgba(120,90,40,0.1);";
+
+    const brandingContent = document.createElement("div");
+    brandingContent.className = "branding-content";
+
+    const titleDiv = document.createElement("div");
+    titleDiv.className = "branding-title";
+    
+    // Wrap letters for secret
+    const secretWrap = document.createElement("span");
+    secretWrap.className = "md-secret-wrap";
+    
+    _mdHomeSecretGoal.split("").forEach(char => {
+        const span = document.createElement("span");
+        span.textContent = char;
+        span.addEventListener("click", (e) => {
+            e.stopPropagation();
+            const expected = _mdHomeSecretGoal[_mdHomeSecretIndex];
+            if (char === expected) {
+                _mdHomeSecretIndex++;
+                console.log(`[Mayhem-Doctor] Home Secret: ${_mdHomeSecretIndex}/${_mdHomeSecretGoal.length}`);
+                if (_mdHomeSecretIndex === _mdHomeSecretGoal.length) {
+                    _mdHomeSecretIndex = 0;
+                    const current = getSettings().enableGlobalCrawl;
+                    const next = !current;
+                    updateSetting("enableGlobalCrawl", next);
+                    modalContent.setAttribute("data-md-unlocked", next);
+
+                    // Visual feedback
+                    modalContent.classList.add("md-unlocked-pulse");
+                    setTimeout(() => modalContent.classList.remove("md-unlocked-pulse"), 1000);
+
+                    const msg = `Global Crawl ${next ? 'unlocked and enabled' : 'disabled'}!`;
+                    if (typeof Toast !== 'undefined') {
+                        Toast.success(msg);
+                    } else {
+                        console.log(`[Mayhem-Doctor] ${msg}`);
+                    }
+
+                    secretWrap.style.transition = "color 0.2s ease";
+                    secretWrap.style.color = "#f0d67d";
+                }
+            } else {
+                if (_mdHomeSecretIndex > 0) console.log("[Mayhem-Doctor] Home Secret reset!");
+                _mdHomeSecretIndex = 0;
+            }
+        }, { capture: true });
+        secretWrap.appendChild(span);
+    });
+
+    // Add a space between MAYHEM and DOCTOR manually
+    const space = document.createElement("span");
+    space.innerHTML = "&nbsp;";
+    secretWrap.insertBefore(space, secretWrap.childNodes[6]);
+
+    titleDiv.appendChild(secretWrap);
+
+    const devDiv = document.createElement("div");
+    devDiv.className = "branding-dev";
+    devDiv.textContent = "by Reformed Doge";
+
+    const verDiv = document.createElement("div");
+    verDiv.className = "branding-version";
+    verDiv.innerHTML = `v${getCurrentVersion()} ${hasUpdate() ? '&bull; <span style="color: #c8aa6e; font-weight: 600;">Update Available</span>' : ""} &bull; <a href="https://github.com/ReformedDoge/Mayhem-Doctor" target="_blank" style="color: #c8aa6e; text-decoration: none;">GitHub</a>`;
+
+    brandingContent.appendChild(titleDiv);
+    brandingContent.appendChild(devDiv);
+    brandingContent.appendChild(verDiv);
+    infoSection.appendChild(brandingContent);
 
     modalContent.innerHTML = `
             <div class="aram-modal-tools">
@@ -548,7 +631,7 @@ export async function openCommandBarModal() {
                             </div>
                         </div>
                     </div>
-                    ${infoHtml}
+                    <div id="md-home-info-placeholder"></div>
                 </div>
                 <div class="home-right">
                     ${dashboardHtml}
@@ -557,6 +640,12 @@ export async function openCommandBarModal() {
         `;
 
     modalContent.querySelector(".aram-modal-close").onclick = closeHost;
+
+    const placeholder = modalContent.querySelector("#md-home-info-placeholder");
+    if (placeholder) {
+      placeholder.innerHTML = infoHtml;
+      placeholder.querySelector("#md-branding-placeholder").appendChild(infoSection);
+    }
 
     const slider = modalContent.querySelector("#cb-slider");
     const numInput = modalContent.querySelector("#cb-game-count");

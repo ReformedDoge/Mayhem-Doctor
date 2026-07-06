@@ -3,11 +3,13 @@
  * Tabs: General Stats, Match History, Specific Champions, Lobby Stats, Settings.
  */
 
-import { CHAMPION_DATA, AUGMENT_DATA, ITEM_DATA } from "../lcu.js";
+import { CHAMPION_DATA, AUGMENT_DATA, ITEM_DATA, LCU_API, myPuuid } from "../lcu.js";
+import { ENABLE_GLOBAL_CRAWL } from "../config.js";
 import {
   accumulateStats,
   buildGlobalStats,
   smoothedWinRate,
+  getWRColor,
 } from "../analysis.js";
 import { createInteractiveTable } from "./table.js";
 import { openAramMatchView } from "./matchView.js";
@@ -16,11 +18,25 @@ import { buildItemSection } from "./items.js";
 import { createPatchFilter, toPatchLabel } from "./patchFilter.js";
 import {
   renderSettingsTab,
+  getCurrentVersion,
   checkForUpdates,
   loadSettings,
+  getSettings,
+  updateSetting,
 } from "./settings.js";
+import {
+  readGlobalStats,
+  readRawGlobalStats,
+  readCrawlState,
+  getAvailablePatchesFromCache,
+} from "../globalCache.js";
+import {
+  startCrawl,
+  cancelCrawl,
+  isCrawlRunning,
+} from "./crawler.js";
 
-//  Champion name fuzzy matching
+// Champion name fuzzy matching
 function normaliseChampName(name) {
   return name.toLowerCase().replace(/['\s]/g, "");
 }
@@ -28,15 +44,33 @@ function normaliseChampName(name) {
 function champMatchesQuery(champName, query) {
   if (!query) return true;
   const q = normaliseChampName(query);
-  const name = champName.toLowerCase();
-  const nameNorm = normaliseChampName(champName);
-  if (nameNorm.startsWith(q)) return true;
-  const words = name.split(/[\s']/);
-  if (words.some((w) => w.startsWith(q))) return true;
-  return false;
+  return normaliseChampName(champName).includes(q);
 }
 
-//  General tab
+// Global DevTools Helper 
+window.__mdToggleCrawl = (val) => {
+  const current = getSettings().enableGlobalCrawl;
+  const target = val ?? !current;
+  updateSetting("enableGlobalCrawl", target);
+  
+  // Try to find the active tabs container and refresh it
+  const containers = document.querySelectorAll('[id^="aram-tabs-"]');
+  containers.forEach(el => {
+      const targetEl = el.parentElement;
+      if (targetEl && window.__mdLastRenderArgs) {
+          const [stats, history, opts] = window.__mdLastRenderArgs;
+          renderStatsInto(targetEl, stats, history, opts);
+      }
+  });
+  
+  console.log(`[Mayhem-Doctor] Global Crawl manually set to: ${target}`);
+};
+
+// Secret sequence state
+let _mdSecretIndex = 0;
+const _mdSecretGoal = "MAYHEMDOCTOR";
+
+// General tab
 export function renderGeneralTab(stats, onChampClick) {
   const container = document.createElement("div");
   const totalGames = stats.wins + stats.losses;
@@ -167,7 +201,7 @@ export function renderGeneralTab(stats, onChampClick) {
   return container;
 }
 
-//  Match history tab
+// Match history tab
 export function renderHistoryTab(
   history,
   selectedChamps,
@@ -301,7 +335,7 @@ export function renderHistoryTab(
             label: "Champion",
             key: "championName",
             render: (r) =>
-              `<div class="aram-icon-cell"><img src="/lol-game-data/assets/v1/champion-icons/${r.championId}.png" class="aram-icon"> ${r.championName}</div>`,
+              `<div class="aram-icon-cell"><img src="/lol-game-data/assets/v1/champion-icons/${r.championId}.png" class="aram-icon"> ${CHAMPION_DATA[r.championId] || r.championName}</div>`,
           },
           { label: "KDA", key: "kda" },
           {
@@ -348,7 +382,8 @@ export function renderHistoryTab(
   return container;
 }
 
-//  Shared champion detail view
+
+// Shared champion detail view
 function buildChampDetailView(
   c,
   games,
@@ -423,7 +458,7 @@ function buildChampDetailView(
   return detailView;
 }
 
-//  Specific Champions tab (focal player data only)
+// Specific Champions tab (focal player data only)
 export function renderSpecificChampionsTab(stats, fullHistory, onChampClick) {
   const root = document.createElement("div");
   root.className = "sc-root";
@@ -486,52 +521,355 @@ export function renderSpecificChampionsTab(stats, fullHistory, onChampClick) {
   );
 }
 
-//  Global Champions tab (all participants aggregated)
-export function renderGlobalChampionsTab(fullHistory, onChampClick) {
+// Global Champions tab (all participants aggregated)
+export function renderGlobalChampionsTab(fullHistory, excludedPatches, onChampClick, clientPatch) {
   const root = document.createElement("div");
   root.className = "sc-root";
 
-  const note = document.createElement("p");
-  note.className = "md-settings-note";
-  note.textContent =
-    "Aggregated from all players in your games. Higher sample sizes per champion.";
-  note.style.marginBottom = "16px";
-  root.appendChild(note);
+  // Crawl Control Panel
+  const panel = document.createElement("div");
+  panel.className = "gc-crawl-panel";
 
-  const { stats, champGames, champItemStats, champAugStats } =
-    buildGlobalStats(fullHistory);
+  // Status note (shows data source)
+  const statusNote = document.createElement("p");
+  statusNote.className = "gc-crawl-status-note";
+  panel.appendChild(statusNote);
 
-  const totalGames = stats.wins + stats.losses;
-  if (totalGames === 0) {
-    const empty = document.createElement("p");
-    empty.className = "sc-empty";
-    empty.textContent = "No global data available.";
-    root.appendChild(empty);
-    return root;
+  // Controls row
+  const controlsRow = document.createElement("div");
+  controlsRow.className = "gc-crawl-controls";
+  panel.appendChild(controlsRow);
+
+  // Source Toggle 
+  const toggleWrap = document.createElement("div");
+  toggleWrap.className = "gc-source-toggle";
+
+  const crawlBtn = document.createElement("button");
+  crawlBtn.className = "gc-source-btn";
+  crawlBtn.textContent = "Crawl Data";
+
+  const personalBtn = document.createElement("button");
+  personalBtn.className = "gc-source-btn";
+  personalBtn.textContent = "Personal Cache";
+
+  toggleWrap.appendChild(crawlBtn);
+  toggleWrap.appendChild(personalBtn);
+  controlsRow.appendChild(toggleWrap);
+
+  // Patch selector 
+  const patchLabel = document.createElement("label");
+  patchLabel.className = "gc-crawl-label";
+  patchLabel.textContent = "Patch:";
+
+  const patchSelect = document.createElement("select");
+  patchSelect.className = "mi-text-input gc-crawl-select";
+
+  const noPatchOpt = document.createElement("option");
+  noPatchOpt.value = "";
+  noPatchOpt.textContent = "All patches";
+  patchSelect.appendChild(noPatchOpt);
+
+  const availablePatches = getAvailablePatchesFromCache();
+  
+  // Inject current client patch if it's new
+  if (clientPatch && clientPatch !== 'Unknown' && !availablePatches.includes(clientPatch)) {
+    availablePatches.push(clientPatch);
+    availablePatches.sort((a, b) => {
+      const [aMaj, aMin] = a.split('.').map(Number);
+      const [bMaj, bMin] = b.split('.').map(Number);
+      return bMaj !== aMaj ? bMaj - aMaj : bMin - aMin;
+    });
   }
 
-  const champEntries = Object.entries(stats.champions)
-    .map(([id, d]) => ({
-      id,
-      name: CHAMPION_DATA[id] || `Champion ${id}`,
-      games: d.games,
-      wins: d.wins,
-      losses: d.games - d.wins,
-      kills: d.kills,
-      deaths: d.deaths,
-      assists: d.assists,
-      dmg: d.dmg,
-    }))
-    .sort((a, b) => b.games - a.games);
+  for (const patch of availablePatches) {
+    const opt = document.createElement("option");
+    opt.value = patch;
+    opt.textContent = patch;
+    patchSelect.appendChild(opt);
+  }
 
-  const grid = buildChampionGridView(
-    champEntries,
-    champGames,
-    champItemStats,
-    champAugStats,
-    onChampClick,
-  );
-  root.appendChild(grid);
+  // Pre-select patch from existing crawl state if any
+  const existingCrawlState = readCrawlState();
+  if (existingCrawlState?.patch) {
+    patchSelect.value = existingCrawlState.patch || "";
+  } else if (clientPatch && availablePatches.includes(clientPatch)) {
+    // Automatically default to the current live patch!
+    patchSelect.value = clientPatch;
+  }
+
+  // Start / Cancel button 
+  const startBtn = document.createElement("button");
+  startBtn.className = "aram-btn-start gc-crawl-btn";
+
+  // Progress bar 
+  const progressWrap = document.createElement("div");
+  progressWrap.className = "gc-progress-wrap";
+  progressWrap.style.display = "none";
+
+  const progressBar = document.createElement("div");
+  progressBar.className = "gc-progress-bar";
+
+  const progressFill = document.createElement("div");
+  progressFill.className = "gc-progress-fill";
+  progressBar.appendChild(progressFill);
+
+  const progressText = document.createElement("span");
+  progressText.className = "gc-progress-text";
+
+  progressWrap.appendChild(progressBar);
+  progressWrap.appendChild(progressText);
+  panel.appendChild(progressWrap);
+
+  controlsRow.appendChild(patchLabel);
+  controlsRow.appendChild(patchSelect);
+  controlsRow.appendChild(startBtn);
+
+  // Champion grid container 
+  const gridContainer = document.createElement("div");
+  gridContainer.className = "gc-grid-container";
+  root.appendChild(panel);
+  root.appendChild(gridContainer);
+
+  // Computed once at construction — reused on every personal-mode toggle
+  const personalFallback = buildGlobalStats(fullHistory);
+
+  // Render helpers 
+
+  /** Renders the champion grid from the given stats payload */
+  function renderGrid(statsPayload) {
+    gridContainer.innerHTML = "";
+
+    const { stats, champGames, champItemStats, champAugStats } = statsPayload;
+    const totalGames = stats.wins + stats.losses;
+
+    if (totalGames === 0) {
+      const empty = document.createElement("p");
+      empty.className = "sc-empty";
+      empty.textContent = "No global data available. Run a crawl or analyze some players first.";
+      gridContainer.appendChild(empty);
+      return;
+    }
+
+    const champEntries = Object.entries(stats.champions)
+      .map(([id, d]) => ({
+        id,
+        name: CHAMPION_DATA[id] || `Champion ${id}`,
+        games: d.games,
+        wins: d.wins,
+        losses: d.games - d.wins,
+        kills: d.kills,
+        deaths: d.deaths,
+        assists: d.assists,
+        dmg: d.dmg,
+      }))
+      .sort((a, b) => b.games - a.games);
+
+    gridContainer.appendChild(
+      buildChampionGridView(champEntries, champGames, champItemStats, champAugStats, null, (isOpen) => {
+        panel.style.display = isOpen ? "none" : "";
+      })
+    );
+  }
+
+  /** Updates the status note and button label */
+  function updateStatusNote() {
+    if (isCrawlRunning()) {
+      startBtn.textContent = "Cancel Crawl";
+      startBtn.classList.add("gc-crawl-btn-cancel");
+      patchSelect.disabled = true;
+      return;
+    }
+
+    startBtn.classList.remove("gc-crawl-btn-cancel");
+    patchSelect.disabled = false;
+
+    const globalData = readGlobalStats();
+    const crawlState = readCrawlState();
+    const useCrawl = window.__mdGlobalSource !== "personal" && !!globalData;
+
+    if (useCrawl) {
+      const { meta } = globalData;
+      const champCount = Object.keys(globalData.stats.champions).length;
+      const date = meta.savedAt ? new Date(meta.savedAt).toLocaleDateString() : "unknown date";
+      const patch = meta.patch ? ` · Patch ${meta.patch}` : "";
+      statusNote.innerHTML =
+        `<span class="gc-status-source gc-status-crawl">Crawl data</span>` +
+        ` — ${meta.totalGames.toLocaleString()} games · ${meta.visitedCount} players · ${champCount} champions${patch} · saved ${date}`;
+
+      const hasResumable = crawlState &&
+        (crawlState.queue.length > 0 || crawlState.totalGames < getSettings().crawlTargetGames);
+      startBtn.textContent = hasResumable ? "Resume Crawl" : "Re-run Crawl";
+    } else {
+      statusNote.innerHTML =
+        `<span class="gc-status-source gc-status-personal">Personal history</span>` +
+        ` — aggregated from your analyzed games. Run a crawl for larger sample sizes.`;
+      startBtn.textContent = "Start Crawl";
+    }
+  }
+
+  // Crawl start / cancel handler 
+  startBtn.onclick = async () => {
+    if (isCrawlRunning()) {
+      cancelCrawl();
+      startBtn.textContent = "Cancelling…";
+      startBtn.disabled = true;
+      return;
+    }
+
+    // Start / resume
+    const targetPatch = patchSelect.value || null;
+    startBtn.disabled = true;
+    progressWrap.style.display = "flex";
+    patchSelect.disabled = true;
+
+    // Get SGP context
+    let sgpServer, rsoToken;
+    try {
+      const { getSgpContext } = await import("../lcu.js");
+      const ctx = await getSgpContext();
+      sgpServer = ctx.sgpServer;
+      rsoToken  = ctx.rso?.token;
+      if (!rsoToken) throw new Error("RSO token unavailable");
+    } catch (e) {
+      progressText.textContent = `Connection error: ${e.message}`;
+      startBtn.disabled = false;
+      patchSelect.disabled = false;
+      return;
+    }
+
+    // Get user PUUID (seed) - uses the focal player being investigated
+    if (!myPuuid) {
+      progressText.textContent = `Error: No focal player selected.`;
+      startBtn.disabled = false;
+      patchSelect.disabled = false;
+      return;
+    }
+
+    startBtn.textContent = "Cancel Crawl";
+    startBtn.classList.add("gc-crawl-btn-cancel");
+    startBtn.disabled = false;
+
+    await startCrawl(myPuuid, sgpServer, rsoToken, targetPatch, (progress) => {
+      // Update progress bar
+      const pct = Math.min(100, (progress.totalGames / getSettings().crawlTargetGames) * 100);
+      progressFill.style.width = `${pct}%`;
+      progressText.textContent = progress.message || "";
+
+      if (progress.phase === 'done' || progress.phase === 'cancelled' || progress.phase === 'error') {
+        startBtn.classList.remove("gc-crawl-btn-cancel");
+        startBtn.disabled = false;
+        patchSelect.disabled = false;
+        updateStatusNote();
+
+        // Re-render grid from freshly saved crawl data
+        const freshData = readGlobalStats();
+        if (freshData) {
+          renderGrid(freshData);
+        }
+
+        // If file cache is enabled the data was not written to DataStore —
+        // prompt the user to save it to the plugin data/ directory.
+        const { isGlobalStatsDirty, saveGlobalStatsToFile, getExpectedFilePath } = window.__mdFileCacheRef || {};
+        if (isGlobalStatsDirty && isGlobalStatsDirty()) {
+          let saveBtn = panel.querySelector(".gc-save-btn");
+          if (!saveBtn) {
+            saveBtn = document.createElement("button");
+            saveBtn.className = "aram-btn-start gc-crawl-btn gc-save-btn";
+            saveBtn.style.cssText = "border-color:#2de0a5; color:#2de0a5;";
+            controlsRow.appendChild(saveBtn);
+          }
+          
+          saveBtn.textContent = "Save?";
+          saveBtn.title =
+            "File cache is enabled — save the data file so it loads automatically on next startup.\n" +
+            `Save to: ${getExpectedFilePath ? getExpectedFilePath() : "data/md-global-stats.json"}`;
+
+          saveBtn.onclick = async () => {
+            saveBtn.disabled = true;
+            saveBtn.textContent = "Saving…";
+            const raw = readRawGlobalStats();
+            if (!raw) {
+              saveBtn.textContent = "No data to save";
+              return;
+            }
+            const ok = await saveGlobalStatsToFile(raw);
+            if (ok) {
+              saveBtn.textContent = "Saved";
+              if (typeof Toast !== 'undefined') Toast.success("Global stats file saved. Place it in the plugin data/ folder to auto-load on startup.");
+              setTimeout(() => { if(saveBtn) saveBtn.remove(); }, 2000);
+            } else {
+              saveBtn.disabled = false;
+              saveBtn.textContent = "Save?";
+            }
+          };
+        }
+
+        setTimeout(() => {
+          progressWrap.style.display = "none";
+          progressFill.style.width = "0";
+          progressText.textContent = "";
+        }, 5000);
+      }
+    });
+  };
+
+  /** Main update logic that chooses what to render */
+  function refreshView() {
+    const globalData = readGlobalStats();
+    const useCrawl = window.__mdGlobalSource !== "personal" && !!globalData;
+
+    // Update toggle buttons
+    if (useCrawl) {
+      crawlBtn.classList.add("active");
+      personalBtn.classList.remove("active");
+    } else {
+      crawlBtn.classList.remove("active");
+      personalBtn.classList.add("active");
+    }
+
+    updateStatusNote();
+
+    if (useCrawl) {
+      // Check if crawl patch is excluded
+      const crawlPatch = globalData.meta.patch || "";
+      const isExcluded = crawlPatch && excludedPatches && excludedPatches.has(crawlPatch);
+
+      if (isExcluded) {
+        gridContainer.innerHTML = "";
+        const msg = document.createElement("p");
+        msg.className = "sc-empty";
+        msg.innerHTML = `Crawl data for <b>Patch ${crawlPatch}</b> is hidden by your current patch filter.<br>` +
+                        `Exclude this patch in the top-right or switch to Personal Cache.`;
+        gridContainer.appendChild(msg);
+      } else {
+        renderGrid(globalData);
+      }
+    } else {
+      renderGrid(personalFallback);
+    }
+  }
+
+  crawlBtn.onclick = () => {
+    window.__mdGlobalSource = "crawl";
+    refreshView();
+  };
+  personalBtn.onclick = () => {
+    window.__mdGlobalSource = "personal";
+    refreshView();
+  };
+
+  // Initial render 
+  refreshView();
+
+  const handleCacheReloaded = () => {
+    if (!root.isConnected) {
+      window.removeEventListener("md-cache-reloaded", handleCacheReloaded);
+      return;
+    }
+    refreshView();
+  };
+  window.addEventListener("md-cache-reloaded", handleCacheReloaded);
+
   return root;
 }
 
@@ -545,7 +883,18 @@ function buildChampionGridView(
   champItemStats,
   champAugStats,
   onChampClick,
+  onDetailToggle
 ) {
+  // Pre-calculate win rates for sorting and display efficiency
+  const processedEntries = champEntries.map((c) => ({
+    ...c,
+    winRate: smoothedWinRate(c.wins, c.games),
+  }));
+
+  const allWrs = processedEntries.map((e) => e.winRate);
+  const maxWR = allWrs.length ? Math.max(...allWrs) : 50;
+  const minWR = allWrs.length ? Math.min(...allWrs) : 50;
+
   const root = document.createElement("div");
   root.className = "sc-root";
 
@@ -563,6 +912,8 @@ function buildChampionGridView(
   const grid = document.createElement("div");
   grid.className = "sc-champion-grid";
   searchView.appendChild(grid);
+
+
 
   root.appendChild(searchView);
 
@@ -608,16 +959,14 @@ function buildChampionGridView(
   function renderGrid(query) {
     grid.innerHTML = "";
 
-    let filtered = champEntries.filter((c) => champMatchesQuery(c.name, query));
+    let filtered = processedEntries.filter((c) => champMatchesQuery(c.name, query));
 
     // Sorting logic
     filtered.sort((a, b) => {
       if (currentSort === "games") {
         return b.games - a.games;
       } else if (currentSort === "winRate") {
-        const wrA = smoothedWinRate(a.wins, a.games);
-        const wrB = smoothedWinRate(b.wins, b.games);
-        return wrB - wrA;
+        return b.winRate - a.winRate;
       } else if (currentSort === "kda") {
         const kdaA = (a.kills + a.assists) / Math.max(1, a.deaths);
         const kdaB = (b.kills + b.assists) / Math.max(1, b.deaths);
@@ -634,10 +983,12 @@ function buildChampionGridView(
       const cell = document.createElement("div");
       cell.className = "sc-champ-cell";
       cell.title = `${c.name} — ${c.games} game${c.games !== 1 ? "s" : ""}`;
+      
+      const color = getWRColor(c.winRate, minWR, maxWR);
       cell.innerHTML = `
                 <img src="/lol-game-data/assets/v1/champion-icons/${c.id}.png" class="sc-champ-icon" alt="${c.name}">
                 <span class="sc-champ-name">${c.name}</span>
-                <span class="sc-champ-games">${c.games}g</span>
+                <span class="sc-champ-games" style="color: ${color}">${c.games}g (${Math.round(c.winRate)}%)</span>
             `;
       cell.onclick = () => showChampDetail(c);
       grid.appendChild(cell);
@@ -662,18 +1013,20 @@ function buildChampionGridView(
       () => {
         detailView.remove();
         searchView.classList.remove("sc-hidden");
+        if (onDetailToggle) onDetailToggle(false);
       },
       onChampClick,
     );
 
     searchView.classList.add("sc-hidden");
+    if (onDetailToggle) onDetailToggle(true);
     root.appendChild(detailView);
   }
 
   return root;
 }
 
-//  Shared stats renderer
+// Shared stats renderer
 /**
  * Renders the full tabbed stats interface into any target element.
  * Used by both the match history modal and the investigator dashboard.
@@ -700,7 +1053,19 @@ export async function renderStatsInto(
   // Champion Filter State
   const selectedChamps = new Set();
 
-    targetEl.innerHTML = `
+  // Fetch current client patch
+  let clientPatch = null;
+  try {
+    const res = await fetch('/lol-patch/v1/game-version');
+    if (res.ok) {
+      const text = await res.text();
+      clientPatch = toPatchLabel(text.replace(/"/g, '').trim());
+    }
+  } catch (e) {
+    console.warn("[Mayhem-Doctor] Failed to fetch client patch:", e);
+  }
+
+  targetEl.innerHTML = `
         <div class="aram-modal-tools">
             ${showHome ? '<div class="aram-modal-home" title="Return to Dashboard"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg></div>' : ""}
             ${showClose ? '<div class="aram-modal-close" title="Close">&times;</div>' : ""}
@@ -710,15 +1075,18 @@ export async function renderStatsInto(
             <div class="aram-tab-item active"    data-tab="${uid}-general">General Stats</div>
             <div class="aram-tab-item"            data-tab="${uid}-history" id="${uid}-tab-history">Match History</div>
             <div class="aram-tab-item"            data-tab="${uid}-champions">Player's Champions</div>
-            <div class="aram-tab-item"            data-tab="${uid}-global">Global Champions</div>
+            ${ENABLE_GLOBAL_CRAWL ? `<div class="aram-tab-item" data-tab="${uid}-global">Global Champions</div>` : ""}
             <div class="aram-tab-item"            data-tab="${uid}-settings">Settings</div>
         </div>
         <div id="${uid}-general"   class="aram-tab-content active"></div>
         <div id="${uid}-history"   class="aram-tab-content"></div>
         <div id="${uid}-champions" class="aram-tab-content"></div>
-        <div id="${uid}-global"    class="aram-tab-content"></div>
+        ${ENABLE_GLOBAL_CRAWL ? `<div id="${uid}-global" class="aram-tab-content"></div>` : ""}
         <div id="${uid}-settings"  class="aram-tab-content"></div>
     `;
+
+    // Set initial unlocked state
+    targetEl.setAttribute("data-md-unlocked", getSettings().enableGlobalCrawl);
 
   const switchTab = (tabId) => {
     const tabItem = targetEl.querySelector(`[data-tab="${uid}-${tabId}"]`);
@@ -727,23 +1095,87 @@ export async function renderStatsInto(
 
   targetEl.style.position = "relative";
 
-  const footer = doc.createElement("div");
-  footer.className = "aram-credits";
-  footer.innerHTML = "Mayhem Doctor &nbsp;&middot;&nbsp; by Reformed Doge";
-  targetEl.appendChild(footer);
-
   targetEl.querySelectorAll(".aram-tab-item").forEach((tab) => {
     tab.onclick = () => {
-      targetEl
-        .querySelector(".aram-tab-item.active")
-        .classList.remove("active");
-      targetEl
-        .querySelector(".aram-tab-content.active")
-        .classList.remove("active");
+      const activeTabItem = targetEl.querySelector(".aram-tab-item.active");
+      const activeTabContent = targetEl.querySelector(".aram-tab-content.active");
+      if (activeTabItem) activeTabItem.classList.remove("active");
+      if (activeTabContent) activeTabContent.classList.remove("active");
       tab.classList.add("active");
       targetEl.querySelector(`#${tab.dataset.tab}`).classList.add("active");
     };
   });
+
+  // Secret Sequence logic 
+  console.log("[Mayhem-Doctor] Initializing footer secret sequence...");
+  const footer = doc.createElement("div");
+  footer.className = "aram-credits";
+
+  const secretWrap = doc.createElement("span");
+  secretWrap.className = "md-secret-wrap";
+
+  const fullText = `MAYHEM DOCTOR \u00B7 by Reformed Doge v${getCurrentVersion()}`;
+
+  "MAYHEM DOCTOR".split("").forEach((char) => {
+    const span = doc.createElement("span");
+    span.textContent = char;
+    if (char !== " ") {
+      span.addEventListener("click", (e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        const expected = _mdSecretGoal[_mdSecretIndex];
+        
+        if (char === expected) {
+          _mdSecretIndex++;
+          console.log(`[Mayhem-Doctor] Secret: ${_mdSecretIndex}/${_mdSecretGoal.length}`);
+          
+          if (_mdSecretIndex === _mdSecretGoal.length) {
+            _mdSecretIndex = 0; // Reset
+            const current = getSettings().enableGlobalCrawl;
+            const next = !current;
+            updateSetting("enableGlobalCrawl", next);
+            targetEl.setAttribute("data-md-unlocked", next);
+            
+            // Visual feedback
+            targetEl.classList.add("md-unlocked-pulse");
+            setTimeout(() => targetEl.classList.remove("md-unlocked-pulse"), 1000);
+
+            const msg = `Global Crawl ${next ? 'unlocked and enabled' : 'disabled'}!`;
+            if (typeof Toast !== 'undefined') {
+                Toast.success(msg);
+            } else {
+                console.log(`[Mayhem-Doctor] ${msg}`);
+            }
+            
+            secretWrap.style.transition = "color 0.2s ease";
+            secretWrap.style.color = "#f0d67d"; // Gold flash
+            
+            // Sync any open settings tab
+            const settingsTab = targetEl.querySelector('.md-settings-root');
+            if (settingsTab) {
+                // We just refresh the whole stats container if they are in settings to be safe, 
+                // but usually they aren't. For now, let's just let the attribute handle it.
+            }
+          }
+        } else {
+          if (_mdSecretIndex > 0) {
+              console.log("[Mayhem-Doctor] Secret reset! Expected " + expected + " but got " + char);
+          }
+          _mdSecretIndex = 0;
+        }
+      }, { capture: true });
+    }
+    secretWrap.appendChild(span);
+  });
+
+  // Store args for global re-render
+  window.__mdLastRenderArgs = [_finalStats, fullHistory, opts];
+
+  footer.appendChild(secretWrap);
+  const restOfFooter = doc.createElement("span");
+  restOfFooter.innerHTML = ` &nbsp;&middot;&nbsp; by Reformed Doge v${getCurrentVersion()} &nbsp;&middot;&nbsp; <a href="https://github.com/ReformedDoge/Mayhem-Doctor" target="_blank" style="color:inherit;text-decoration:none;opacity:0.6;">GitHub</a>`;
+  footer.appendChild(restOfFooter);
+  targetEl.appendChild(footer);
 
   if (showClose) {
     targetEl.querySelector(".aram-modal-close").onclick =
@@ -778,7 +1210,7 @@ export async function renderStatsInto(
     const generalEl = targetEl.querySelector(`#${uid}-general`);
     const historyEl = targetEl.querySelector(`#${uid}-history`);
     const championsEl = targetEl.querySelector(`#${uid}-champions`);
-    const globalEl = targetEl.querySelector(`#${uid}-global`);
+    const globalEl = ENABLE_GLOBAL_CRAWL ? targetEl.querySelector(`#${uid}-global`) : null;
 
     const refreshHistory = () => {
       historyEl.innerHTML = "";
@@ -789,7 +1221,7 @@ export async function renderStatsInto(
 
     generalEl.innerHTML = "";
     championsEl.innerHTML = "";
-    globalEl.innerHTML = "";
+    if (globalEl) globalEl.innerHTML = "";
 
     const handleChampFilter = (cId) => {
       selectedChamps.clear();
@@ -805,7 +1237,11 @@ export async function renderStatsInto(
       renderSpecificChampionsTab(stats, filtered, handleChampFilter),
     );
 
-    globalEl.appendChild(renderGlobalChampionsTab(filtered));
+    if (globalEl) {
+      globalEl.appendChild(
+        renderGlobalChampionsTab(filtered, excluded, handleChampFilter, clientPatch),
+      );
+    }
   }
 
   // Settings tab is patch-filter-independent, mount once

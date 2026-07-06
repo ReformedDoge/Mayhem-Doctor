@@ -1,13 +1,14 @@
 /**
- * DataStore-backed cache per-PUUID match history.
+ * Shared Store-backed cache per-PUUID match history.
  *
  * Storage layout:
- *   "md-cache-index"    → { puuids: string[], totalBytes: number }
- *   "md-cache-{puuid}"  → { newestGameCreation, oldestGameCreation,
- *                            oldestStartIndex, history, savedAt }
+ *   mayhemDoctorCache.index          -> { puuids: string[], totalBytes: number }
+ *   mayhemDoctorCache["entry:puuid"] -> { newestGameCreation, oldestGameCreation,
+ *                                         oldestStartIndex, history, savedAt }
  */
 
-import { CACHE_PREFIX, CACHE_INDEX_KEY, MAX_CACHED_PUUIDS, MAX_BYTES_PER_PUUID, MAX_TOTAL_BYTES } from './config.js';
+import { MAX_CACHED_PUUIDS, MAX_BYTES_PER_PUUID, MAX_TOTAL_BYTES } from './config.js';
+import { STORE_KEYS, STORE_MODULES, storeGet, storeRemove, storeSet } from './store.js';
 
 // Compaction schema 
 // The on-disk format uses short keys and arrays instead of verbose field names.
@@ -15,21 +16,21 @@ import { CACHE_PREFIX, CACHE_INDEX_KEY, MAX_CACHED_PUUIDS, MAX_BYTES_PER_PUUID, 
 // of the codebase expects. Nothing outside cache.js ever sees the packed form.
 //
 // History entry short keys:
-//   r=result(1/0/-1)  ch=championId  k/d/a=kills/deaths/assists
-//   dm=dmg  it=items[]  ob=orderedBuild[]  au=augments[]
-//   gc=gameCreation  gd=gameDuration  gv=gameVersion(Major.Minor only)
-//   rg=rawGame{ qid, dur, gv, gc, mid, pp:participants[] }
+// r=result(1/0/-1)  ch=championId  k/d/a=kills/deaths/assists
+// dm=dmg  it=items[]  ob=orderedBuild[]  au=augments[]
+// gc=gameCreation  gd=gameDuration  gv=gameVersion(Major.Minor only)
+// rg=rawGame{ qid, dur, gv, gc, mid, pp:participants[] }
 //
 // Participant short keys:
-//   id=puuid  n=riotIdGameName  tag=riotIdTagline
-//   ch=championId  tid=teamId  w=win(1/0)
-//   k/d/a  g=gold  cs=totalCS
-//   td=dmgToChamps  tph/tmg/ttr=phys/magic/true dmg dealt
-//   dtk=dmgTaken  dph/dmg2/dtr=phys/magic/true taken
-//   mit=selfMitigated  hl=totalHeal  hlt=healsOnTeammates  sh=shieldOnTeammates
-//   fl=flags bitmask(firstBloodKill|firstBloodAssist<<1|firstTowerKill<<2|firstTowerAssist<<3)
-//   tt=turretTakedowns  it2=inhibitorTakedowns  sp=[spell1,spell2]
-//   it=items[]  au=augments[]  lb=legendaryItemUsed[]
+// id=puuid  n=riotIdGameName  tag=riotIdTagline
+// ch=championId  tid=teamId  w=win(1/0)
+// k/d/a  g=gold  cs=totalCS
+// td=dmgToChamps  tph/tmg/ttr=phys/magic/true dmg dealt
+// dtk=dmgTaken  dph/dmg2/dtr=phys/magic/true taken
+// mit=selfMitigated  hl=totalHeal  hlt=healsOnTeammates  sh=shieldOnTeammates
+// fl=flags bitmask(firstBloodKill|firstBloodAssist<<1|firstTowerKill<<2|firstTowerAssist<<3)
+// tt=turretTakedowns  it2=inhibitorTakedowns  sp=[spell1,spell2]
+// it=items[]  au=augments[]  lb=legendaryItemUsed[]
 
 function packParticipant(p) {
     return {
@@ -160,13 +161,13 @@ function unpackHistoryEntry(c) {
     };
 }
 
-//  Internal helpers 
+// Internal helpers 
 function estimateBytes(obj) {
     try { return JSON.stringify(obj).length; } catch { return 0; }
 }
 
 function writeCacheIndex(idx) {
-    try { DataStore.set(CACHE_INDEX_KEY, { ...idx, v: CACHE_VERSION }); } catch {}
+    try { storeSet(STORE_MODULES.cache, STORE_KEYS.cacheIndex, { ...idx, v: CACHE_VERSION }); } catch {}
 }
 
 function evictUntilFits(idx, neededBytes) {
@@ -174,14 +175,14 @@ function evictUntilFits(idx, neededBytes) {
         const evictPuuid = idx.puuids.shift();
         const evictEntry = readCacheEntry(evictPuuid);
         const evictBytes = evictEntry ? estimateBytes(evictEntry) : 0;
-        try { DataStore.remove(`${CACHE_PREFIX}${evictPuuid}`); } catch {}
+        try { storeRemove(STORE_MODULES.cache, `entry:${evictPuuid}`); } catch {}
         idx.totalBytes = Math.max(0, idx.totalBytes - evictBytes);
     }
     while (idx.puuids.length > 0 && (idx.totalBytes + neededBytes) > MAX_TOTAL_BYTES) {
         const evictPuuid = idx.puuids.shift();
         const evictEntry = readCacheEntry(evictPuuid);
         const evictBytes = evictEntry ? estimateBytes(evictEntry) : 0;
-        try { DataStore.remove(`${CACHE_PREFIX}${evictPuuid}`); } catch {}
+        try { storeRemove(STORE_MODULES.cache, `entry:${evictPuuid}`); } catch {}
         idx.totalBytes = Math.max(0, idx.totalBytes - evictBytes);
     }
     return idx;
@@ -199,14 +200,14 @@ function freshIndex() {
 
 function wipeAllEntries(idx) {
     (idx.puuids || []).forEach(puuid => {
-        try { DataStore.remove(`${CACHE_PREFIX}${puuid}`); } catch {}
+        try { storeRemove(STORE_MODULES.cache, `entry:${puuid}`); } catch {}
     });
 }
 
 // Public API 
 export function readCacheIndex() {
     try {
-        const idx = DataStore.get(CACHE_INDEX_KEY);
+        const idx = storeGet(STORE_MODULES.cache, STORE_KEYS.cacheIndex);
         if (!idx || !Array.isArray(idx.puuids)) return freshIndex();
 
         if ((idx.v || 1) < CACHE_VERSION) {
@@ -226,7 +227,7 @@ export function readCacheIndex() {
 
 export function readCacheEntry(puuid) {
     try {
-        const entry = DataStore.get(`${CACHE_PREFIX}${puuid}`);
+        const entry = storeGet(STORE_MODULES.cache, `entry:${puuid}`);
         if (entry && typeof entry.newestGameCreation === 'number' && Array.isArray(entry.history)) {
             return { ...entry, history: entry.history.map(unpackHistoryEntry) };
         }
@@ -257,7 +258,7 @@ export function saveCacheEntry(puuid, history, oldestStartIndex) {
             idx.puuids.splice(existingPos, 1);
         }
         idx = evictUntilFits(idx, entryBytes);
-        const ok = DataStore.set(`${CACHE_PREFIX}${puuid}`, entry);
+        const ok = storeSet(STORE_MODULES.cache, `entry:${puuid}`, entry);
         if (!ok) return;
         idx.puuids.push(puuid);
         idx.totalBytes += entryBytes;
@@ -271,8 +272,8 @@ export function saveCacheEntry(puuid, history, oldestStartIndex) {
 export function clearAllCache() {
     const idx = readCacheIndex();
     idx.puuids.forEach(puuid => {
-        try { DataStore.remove(`${CACHE_PREFIX}${puuid}`); } catch {}
+        try { storeRemove(STORE_MODULES.cache, `entry:${puuid}`); } catch {}
     });
-    try { DataStore.remove(CACHE_INDEX_KEY); } catch {}
+    try { storeRemove(STORE_MODULES.cache, STORE_KEYS.cacheIndex); } catch {}
     return idx.puuids.length;
 }

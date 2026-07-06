@@ -1,5 +1,5 @@
 /**
- * Augment analysis: pairwise lift model, suggested build, seen pairs.
+ * Augment analysis: tier rankings, seen pairs.
  * DOM renderers for element + rarity helpers.
  */
 
@@ -7,7 +7,7 @@ import { AUGMENT_DATA } from '../lcu.js';
 import { smoothedWinRate } from '../analysis.js';
 import { createInteractiveTable } from './table.js';
 
-//  Rarity helpers 
+// Rarity helpers
 export function getAugRarity(id) {
     const info = AUGMENT_DATA[id];
     if (!info) return 'kUnknown';
@@ -20,99 +20,33 @@ export function rarityOrder(rarity) {
     return { kSilver: 0, kGold: 1, kPrismatic: 2 }[rarity] ?? -1;
 }
 
-function confidenceLabel(games) {
-    if (games >= 25) return { label: 'high', cls: 'sc-conf-high' };
-    if (games >= 10) return { label: 'medium', cls: 'sc-conf-mid' };
-    return { label: 'low', cls: 'sc-conf-low' };
-}
-
-//  Pairwise lift model
 /**
- * For each pair (A,B) seen together, compute:
- *   lift(A,B) = smoothedWR(A∩B) − mean(smoothedWR(A), smoothedWR(B))
- * Positive lift = they synergize beyond their individual win rates.
- * All win rates are Laplace-smoothed before comparison so small-n pairs
- * don't dominate.
+ * Identifies the top augments for each rarity tier using a priority score (WR + Popularity).
  */
-export function buildPairLift(games, singleStats) {
-    const pairMap = {};
-    games.forEach(g => {
-        const augs = [...new Set(g.augments.map(Number).filter(Boolean))];
-        for (let i = 0; i < augs.length; i++) {
-            for (let j = i + 1; j < augs.length; j++) {
-                const a = augs[i], b = augs[j];
-                const key = a < b ? `${a}|${b}` : `${b}|${a}`;
-                if (!pairMap[key]) pairMap[key] = { ids: a < b ? [a, b] : [b, a], games: 0, wins: 0 };
-                pairMap[key].games++;
-                if (g.win) pairMap[key].wins++;
-            }
-        }
-    });
-    const result = {};
-    Object.entries(pairMap).forEach(([key, d]) => {
-        const [a, b] = d.ids;
-        const sA = singleStats[a], sB = singleStats[b];
-        if (!sA || !sB) return;
-        const wrPair = smoothedWinRate(d.wins, d.games);
-        const wrA    = smoothedWinRate(sA.wins, sA.games);
-        const wrB    = smoothedWinRate(sB.wins, sB.games);
-        const lift   = wrPair - (wrA + wrB) / 2;
-        // Shrinkage: trust scales continuously with co-occurrence count.
-        // coGames / (coGames + 5) never hard-plateaus unlike min(1, n/5).
-        const shrinkage = d.games / (d.games + 5);
-        result[key] = { ids: d.ids, liftScore: lift * shrinkage, coGames: d.games, wrPair };
-    });
-    return result;
-}
+export function buildTierChampions(cAugStats, gamesCount) {
+    const minSample = Math.max(2, Math.floor(gamesCount * 0.02));
+    const tiers = { kSilver: [], kGold: [], kPrismatic: [] };
 
-export function buildSuggestedAugBuild(games, singleStats, pairLift, totalChampGames) {
-    if (games.length < 3) return null;
-    const seen = Object.entries(singleStats)
-        .filter(([, d]) => d.games >= 2)
-        .map(([id, d]) => ({
-            id:     Number(id),
-            wr:     smoothedWinRate(d.wins, d.games),
-            games:  d.games,
-            rarity: getAugRarity(Number(id))
-        }))
-        .filter(a => a.rarity !== 'kUnknown');
-    if (seen.length < 2) return null;
+    Object.entries(cAugStats).forEach(([id, d]) => {
+        if (d.games < minSample) return;
+        const rarity = getAugRarity(Number(id));
+        if (!tiers[rarity]) return;
 
-    const selected  = [];
-    const remaining = [...seen];
-    for (let slot = 0; slot < 4 && remaining.length > 0; slot++) {
-        let bestScore = -Infinity, bestIdx = 0;
-        remaining.forEach((cand, idx) => {
-            let score = cand.wr;
-            selected.forEach(sel => {
-                const a = Math.min(cand.id, sel.id);
-                const b = Math.max(cand.id, sel.id);
-                const liftEntry = pairLift[`${a}|${b}`];
-                if (liftEntry) score += liftEntry.liftScore;
-            });
-            if (score > bestScore) { bestScore = score; bestIdx = idx; }
+        const wr = smoothedWinRate(d.wins, d.games);
+        tiers[rarity].push({
+            id: Number(id),
+            wr: wr,
+            games: d.games,
+            priority: wr + (Math.log(Math.max(1, d.games)) * 5)
         });
-        selected.push(remaining.splice(bestIdx, 1)[0]);
-    }
+    });
 
-    // If every pick is silver and a higher-rarity aug exists, swap out
-    // the weakest silver for it. Only fires when silver genuinely dominates
-    // by smoothed WR, which is less likely to corrupt good recommendations
-    // than using raw WR.
-    const allSilver = selected.every(a => a.rarity === 'kSilver');
-    if (allSilver) {
-        const higherRarity = seen
-            .filter(a => a.rarity !== 'kSilver' && !selected.find(s => s.id === a.id))
-            .sort((a, b) => b.wr - a.wr)[0];
-        if (higherRarity) {
-            const weakestIdx = selected.reduce((wIdx, a, i, arr) => a.wr < arr[wIdx].wr ? i : wIdx, 0);
-            selected[weakestIdx] = higherRarity;
-        }
-    }
+    Object.keys(tiers).forEach(k => {
+        tiers[k].sort((a, b) => b.priority - a.priority);
+        tiers[k] = tiers[k].slice(0, 10);
+    });
 
-    selected.sort((a, b) => rarityOrder(b.rarity) - rarityOrder(a.rarity));
-    const conf = confidenceLabel(games.length);
-    return { picks: selected, confidence: conf, sampleGames: games.length };
+    return tiers;
 }
 
 export function buildSeenPairs(games, topN = 5, minGames = 2) {
@@ -131,12 +65,20 @@ export function buildSeenPairs(games, topN = 5, minGames = 2) {
     });
     return Object.values(map)
         .filter(d => d.games >= minGames)
-        .map(d => ({ ...d, winRate: smoothedWinRate(d.wins, d.games) }))
-        .sort((a, b) => b.winRate - a.winRate || b.games - a.games)
+        .map(d => {
+            const wr = smoothedWinRate(d.wins, d.games);
+            return {
+                ...d,
+                winRate: wr,
+                priority: wr + (Math.log(Math.max(1, d.games)) * 5)
+            };
+        })
+        .filter(d => d.games >= Math.max(2, games.length * 0.01))
+        .sort((a, b) => b.priority - a.priority || b.games - a.games)
         .slice(0, topN);
 }
 
-//  Chip renderer 
+// Chip renderer
 export function augChipFull(id, extraClass = '') {
     const info = AUGMENT_DATA[id] || { name: `Augment ${id}`, icon: '', rarity: 'kUnknown' };
     const rarity = info.rarity || 'kUnknown';
@@ -149,7 +91,7 @@ export function augChipFull(id, extraClass = '') {
     `;
 }
 
-//  Card renderers 
+// Card renderers
 export function renderSeenPairCards(pairs) {
     if (pairs.length === 0) {
         const p = document.createElement('p');
@@ -177,29 +119,48 @@ export function renderSeenPairCards(pairs) {
     return wrap;
 }
 
-export function renderSuggestedBuild(build) {
-    if (!build) {
-        const p = document.createElement('p');
-        p.className = 'sc-empty';
-        p.textContent = 'Need ≥3 games with augment data to generate a suggestion.';
-        return p;
-    }
+export function renderTierChampions(tiers) {
     const wrap = document.createElement('div');
-    wrap.className = 'sc-suggested-build';
-    const chips = build.picks.map(p => augChipFull(p.id, 'sc-suggested-chip')).join('');
-    wrap.innerHTML = `
-        <div class="sc-suggested-chips">${chips}</div>
-        <div class="sc-suggested-footer">
-            <span class="sc-suggested-label">Pairwise lift model</span>
-            <span class="${build.confidence.cls} sc-suggested-conf">
-                ${build.confidence.label} confidence &middot; ${build.sampleGames} games
-            </span>
-        </div>
-    `;
+    wrap.className = 'sc-tier-champions-board';
+
+    const order = ['kPrismatic', 'kGold', 'kSilver'];
+    order.forEach(tierKey => {
+        const tierData = tiers[tierKey];
+        if (!tierData || tierData.length === 0) return;
+
+        const col = document.createElement('div');
+        col.className = `sc-tier-col sc-tier-col--${tierKey}`;
+
+        const label = document.createElement('div');
+        label.className = 'sc-tier-label';
+        label.textContent = rarityLabel(tierKey);
+        col.appendChild(label);
+
+        const grid = document.createElement('div');
+        grid.className = 'sc-tier-grid-wrap';
+
+        tierData.forEach((aug) => {
+            const info = AUGMENT_DATA[aug.id];
+            const item = document.createElement('div');
+            item.className = 'sc-tier-item-mini';
+            item.innerHTML = `
+                <img src="${info?.icon || ''}" class="sc-tier-icon-mini" title="${info?.name || 'Augment'}">
+                <div class="sc-tier-item-details">
+                    <div class="sc-tier-name-mini" title="${info?.name || 'Augment'}">${info?.name || 'Augment'}</div>
+                    <div class="sc-tier-wr-mini" style="color: ${aug.wr >= 60 ? '#2de0a5' : '#aaa'}">${aug.wr.toFixed(1)}% WR</div>
+                </div>
+            `;
+            grid.appendChild(item);
+        });
+
+        col.appendChild(grid);
+        wrap.appendChild(col);
+    });
+
     return wrap;
 }
 
-//  Augment section builder (Specific Champions tab) 
+// Augment section builder (Specific Champions tab)
 /**
  * Builds the full augment panel for a champion detail view.
  * Returns a ready-to-append .sc-aug-section element.
@@ -210,12 +171,11 @@ export function buildAugSection(games, cAugStats, totalGames) {
 
     const sugTitle = document.createElement('h3');
     sugTitle.className = 'sc-section-title';
-    sugTitle.innerHTML = 'Suggested Aug Build <span class="sc-model-badge">pairwise model</span>';
+    sugTitle.textContent = 'TOP AUGMENTS BY TIER';
     augSection.appendChild(sugTitle);
 
-    const pairLift  = buildPairLift(games, cAugStats);
-    const suggested = buildSuggestedAugBuild(games, cAugStats, pairLift, totalGames);
-    augSection.appendChild(renderSuggestedBuild(suggested));
+    const tiers = buildTierChampions(cAugStats, games.length);
+    augSection.appendChild(renderTierChampions(tiers));
 
     const pairsTitle = document.createElement('h3');
     pairsTitle.className = 'sc-section-title sc-section-title--pairs';
@@ -238,16 +198,18 @@ export function buildAugSection(games, cAugStats, totalGames) {
     }).sort((a, b) => b.games - a.games);
 
     if (augRows.length === 0) {
-        const p = document.createElement('p'); p.className = 'sc-empty'; p.textContent = 'No augment data.';
+        const p = document.createElement('p');
+        p.className = 'sc-empty';
+        p.textContent = 'No augment data.';
         augSection.appendChild(p);
     } else {
         augSection.appendChild(createInteractiveTable([
             { label: 'Augment', key: 'name', render: r => {
                 const rc = { kSilver: 'sc-aug-silver', kGold: 'sc-aug-gold', kPrismatic: 'sc-aug-prismatic' }[r.rarity] || '';
-                return `<div class="aram-icon-cell"><span class="sc-rarity-dot ${rc}"></span>${r.icon ? `<img src="${r.icon}" class="aram-icon">` : ''} ${r.name}</div>`;
+                return `<div class="aram-icon-cell"><span class="sc-rarity-dot ${rc}"></span>${r.icon ? `<img src="${r.icon}" class="aram-icon sc-aug-border ${rc}">` : ''} ${r.name}</div>`;
             }},
             { label: 'Picked', key: 'games' },
-            { label: 'Win %',  key: 'winRate', render: r => `<span class="${r.winRate >= 60 ? 'aram-win-high' : r.winRate <= 40 ? 'aram-win-low' : ''}">${r.winRate.toFixed(1)}%</span>` }
+            { label: 'Win %', key: 'winRate', render: r => `<span class="${r.winRate >= 60 ? 'aram-win-high' : r.winRate <= 40 ? 'aram-win-low' : ''}">${r.winRate.toFixed(1)}%</span>` }
         ], augRows, 'games'));
     }
 

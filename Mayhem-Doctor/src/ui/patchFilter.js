@@ -4,13 +4,13 @@
  * - Extracts Major.Minor from full gameVersion strings (e.g. "15.8.694.9999" → "15.8")
  * - Defaults all patches to selected (stores only the *excluded* set so new patches
  *   discovered in future fetches are automatically included)
- * - Persists exclusions to DataStore under "md-patch-filter" so the preference
- *   survives client restarts
+ * - Persists exclusions in the shared Store so the preference survives client
+ *   restarts without creating orphaned top-level DataStore keys.
  */
 
-const DATASTORE_KEY = 'md-patch-filter';
+import { STORE_KEYS, STORE_MODULES, storeGet, storeSet } from '../store.js';
 
-//  Helpers 
+// Helpers 
 // "15.8.694.9999" → "15.8"
 export function toPatchLabel(gameVersion = '') {
     const parts = gameVersion.split('.');
@@ -26,11 +26,11 @@ function sortedPatches(patchSet) {
     });
 }
 
-//  DataStore persistence 
+// Store persistence
 async function loadExcluded() {
     try {
-        const raw = await DataStore.get(DATASTORE_KEY);
-        return new Set(raw ? JSON.parse(raw) : []);
+        const raw = storeGet(STORE_MODULES.patchFilter, STORE_KEYS.patchExcluded, []);
+        return new Set(Array.isArray(raw) ? raw : []);
     } catch {
         return new Set();
     }
@@ -38,13 +38,13 @@ async function loadExcluded() {
 
 async function saveExcluded(excludedSet) {
     try {
-        await DataStore.set(DATASTORE_KEY, JSON.stringify([...excludedSet]));
+        storeSet(STORE_MODULES.patchFilter, STORE_KEYS.patchExcluded, [...excludedSet]);
     } catch {
         // filter still works in-memory
     }
 }
 
-//  Component 
+// Component 
 /**
  * Creates and returns a patch filter element.
  *
@@ -69,7 +69,7 @@ export async function createPatchFilter(
     const activeCount  = () => allPatches.length - excludedSet.size;
     const totalCount   = allPatches.length;
 
-    //  DOM 
+    // DOM 
     const wrapper = doc.createElement('div');
     wrapper.className = 'pf-wrapper';
 
@@ -83,7 +83,7 @@ export async function createPatchFilter(
     wrapper.appendChild(pill);
     wrapper.appendChild(dropdown);
 
-    //  Label updater 
+    // Label updater 
     function updatePill() {
         const active = activeCount();
         if (active === totalCount) {
@@ -95,7 +95,7 @@ export async function createPatchFilter(
         }
     }
 
-    //  Dropdown builder 
+    // Dropdown builder 
     function buildDropdown() {
         dropdown.innerHTML = '';
 

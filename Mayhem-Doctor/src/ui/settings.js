@@ -1,9 +1,10 @@
 /**
  * Settings: update checker and UI toggle persistence.
- * DataStore key: "md-settings"
  */
 
-const SETTINGS_KEY = "md-settings";
+import { ENABLE_GLOBAL_CRAWL } from "../config.js";
+import { STORE_KEYS, STORE_MODULES, storeGet, storeRemove, storeSet } from "../store.js";
+
 const GITHUB_RELEASES_API =
   "https://api.github.com/repos/ReformedDoge/Mayhem-Doctor/releases/latest";
 let CURRENT_VERSION = [1, 0, 0]; // Fallback, will be synced from index.js metadata
@@ -18,6 +19,19 @@ const DEFAULT_SETTINGS = {
   checkUpdates: true,
   dashboardLookback: 20,
   lastAnalysisCount: 50,
+
+  // Global Crawl (Hidden)
+  enableGlobalCrawl: false,
+
+  // Storage
+  useFileGlobalCache: false,
+
+  // Crawler Tuning
+  crawlTargetGames: 10000,
+  crawlMaxPlayers: 600,
+  crawlMaxConcurrent: 2,
+  crawlDelayMs: 75,
+  crawlSaveEvery: 10,
 };
 
 let _settings = { ...DEFAULT_SETTINGS };
@@ -25,11 +39,11 @@ let _latestRelease = null;
 let _updatePending = false;
 let _badgeCallback = null;
 
-//  Persistence
+// Persistence
 export async function loadSettings() {
   await syncVersionWithMetadata(); // Sync version from index.js metadata
   try {
-    const raw = DataStore.get(SETTINGS_KEY);
+    const raw = storeGet(STORE_MODULES.settings, STORE_KEYS.settings);
     if (raw && typeof raw === "object") {
       _settings = { ...DEFAULT_SETTINGS, ...raw };
     }
@@ -45,7 +59,7 @@ export function getSettings() {
 
 function saveSettings() {
   try {
-    DataStore.set(SETTINGS_KEY, _settings);
+    storeSet(STORE_MODULES.settings, STORE_KEYS.settings, _settings);
   } catch {}
 }
 
@@ -54,7 +68,7 @@ function setSetting(key, value) {
   saveSettings();
 }
 
-//  Version helpers
+// Version helpers
 function parseVersion(tag) {
   const m = String(tag)
     .replace(/^v/i, "")
@@ -70,7 +84,7 @@ function isNewer(candidate, current) {
   return false;
 }
 
-//  Version metadata sync
+// Version metadata sync
 async function syncVersionWithMetadata() {
   try {
     // Construct URL to index.js relative to this file
@@ -102,7 +116,7 @@ export function getCurrentVersionArray() {
   return CURRENT_VERSION;
 }
 
-//  Update checker
+// Update checker
 export async function checkForUpdates(force = false) {
   if (!_settings.checkUpdates && !force) return;
   if (_updatePending) return;
@@ -146,7 +160,7 @@ export function updateSetting(key, value) {
   setSetting(key, value);
 }
 
-//  Settings tab renderer
+// Settings tab renderer
 /**
  * Builds and returns the settings tab content element.
  * Pass a callbacks object to hook into live setting changes:
@@ -156,7 +170,7 @@ export function renderSettingsTab(callbacks = {}) {
   const root = document.createElement("div");
   root.className = "md-settings-root";
 
-  //  UI Injections section
+  // UI Injections section
   const uiTitle = document.createElement("h3");
   uiTitle.className = "md-settings-section-title";
   uiTitle.textContent = "UI Injections";
@@ -204,6 +218,45 @@ export function renderSettingsTab(callbacks = {}) {
     toggle.appendChild(slider);
     row.appendChild(textWrap);
     row.appendChild(toggle);
+    return row;
+  }
+
+  function makeNumberSetting(label, description, settingKey, min, max, step = 1) {
+    const row = document.createElement("div");
+    row.className = "md-settings-row";
+
+    const textWrap = document.createElement("div");
+    textWrap.className = "md-settings-row-text";
+
+    const lbl = document.createElement("div");
+    lbl.className = "md-settings-row-label";
+    lbl.textContent = label;
+
+    const desc = document.createElement("div");
+    desc.className = "md-settings-row-desc";
+    desc.textContent = description;
+
+    textWrap.appendChild(lbl);
+    textWrap.appendChild(desc);
+
+    const input = document.createElement("input");
+    input.type = "number";
+    input.className = "aram-number-input";
+    input.style.width = "80px";
+    input.min = min;
+    input.max = max;
+    input.step = step;
+    input.value = _settings[settingKey];
+    input.onchange = () => {
+      let val = parseInt(input.value);
+      if (isNaN(val)) val = DEFAULT_SETTINGS[settingKey];
+      val = Math.min(max, Math.max(min, val));
+      input.value = val;
+      setSetting(settingKey, val);
+    };
+
+    row.appendChild(textWrap);
+    row.appendChild(input);
     return row;
   }
 
@@ -396,12 +449,10 @@ export function renderSettingsTab(callbacks = {}) {
 
     const selectWrap = document.createElement("div");
     selectWrap.style.display = "flex";
-    //selectWrap.style.alignItems = "center";
     selectWrap.style.gap = "8px";
 
     const select = document.createElement("select");
     select.className = "mi-text-input";
-    //select.style.width = "80px";
 
     const customInput = document.createElement("input");
     customInput.type = "number";
@@ -470,7 +521,222 @@ export function renderSettingsTab(callbacks = {}) {
     ),
   );
 
-  //  Cache section
+  // Storage section (visible when global crawl is unlocked)
+  if (_settings.enableGlobalCrawl) {
+    const storageTitle = document.createElement("h3");
+    storageTitle.className = "md-settings-section-title";
+    storageTitle.textContent = "Storage";
+    root.appendChild(storageTitle);
+
+    const storageNote = document.createElement("p");
+    storageNote.className = "md-settings-note";
+    storageNote.style.cssText = "font-size:12px; color:#888; margin:0 0 10px; line-height:1.5;";
+    storageNote.innerHTML =
+      "Pengu Loader serializes the entire DataStore on every write. Keeping the 50-100+ MB global stats blob in DataStore causes lag whenever <i>any</i> plugin updates its settings.<br><br>" +
+      "<span style=\"color:#c8aa6e; font-weight:bold;\">Performance Tip:</span> If you experience client stuttering or degraded performance, enable File Cache and perform a <b>Data Migration</b>. The redundant DataStore copy will be removed automatically once you successfully save the file.";
+
+      //"<span style=\"color:#c8aa6e; font-weight:bold;\">Performance Tip:</span> If you experience client stuttering or degraded performance, enable File Cache, perform a <b>Data Migration</b>, and then use <b>'Clear Global Data'</b> in the section below to wipe the redundant DataStore copy.";
+    root.appendChild(storageNote);
+
+    root.appendChild(
+      makeToggle(
+        "Global stats file cache",
+        "Store md-global-stats in data/md-global-stats.json instead of DataStore. " +
+        "Requires saving the file after each crawl. No restart needed.",
+        "useFileGlobalCache",
+        async (enabled) => {
+            try {
+                const { setFileCacheEnabled } = await import("../fileCache.js");
+                setFileCacheEnabled(enabled);
+                const { reloadCacheMode } = await import("../globalCache.js");
+                await reloadCacheMode(enabled);
+                window.dispatchEvent(new Event("md-cache-reloaded"));
+            } catch (e) {
+                console.error("[MD-Settings] Error seamlessly toggling cache mode:", e);
+            }
+        }
+      ),
+    );
+
+    const fileCacheNote = document.createElement("div");
+    fileCacheNote.className = "md-settings-row";
+    fileCacheNote.style.cssText = "flex-direction:column; align-items:flex-start; gap:6px;";
+
+    const fileCacheDesc = document.createElement("div");
+    fileCacheDesc.className = "md-settings-row-desc";
+    fileCacheDesc.style.cssText = "font-size:11px; color:#666; line-height:1.6;";
+
+    const { getExpectedFilePath } = window.__mdFileCacheRef || {};
+    let filePath = getExpectedFilePath ? getExpectedFilePath() : "data/md-global-stats.json";
+    
+    if (filePath.includes("https://plugins/")) {
+        filePath = filePath.replace("https://plugins/", "Pengu Loader\\plugins\\").replace(/\//g, "\\");
+    } else {
+        filePath = "Pengu Loader\\plugins\\Mayhem-Doctor\\data\\md-global-stats.json";
+    }
+
+    fileCacheDesc.innerHTML =
+      `When saving after a crawl, save the file to your plugin's data\\ folder so it loads automatically on startup.<br>` +
+      `Expected path: <code style="color:#c8aa6e; font-size:10px;">...\\${filePath}</code>`;
+
+    fileCacheNote.appendChild(fileCacheDesc);
+    root.appendChild(fileCacheNote);
+
+    const migrateRow = document.createElement("div");
+    migrateRow.className = "md-settings-row";
+    migrateRow.style.cssText = "flex-direction: row; gap: 10px; border-top: none; padding-top: 5px;";
+    
+    const migrateBtn = document.createElement("button");
+    migrateBtn.className = "aram-btn-start";
+    migrateBtn.textContent = "Migrate DataStore to File";
+    migrateBtn.style.cssText = "white-space: nowrap;";
+    
+    migrateBtn.onclick = async () => {
+        migrateBtn.disabled = true;
+        migrateBtn.textContent = "Migrating...";
+        try {
+            const stats = storeGet(STORE_MODULES.global, STORE_KEYS.globalStats);
+            const crawl = storeGet(STORE_MODULES.global, STORE_KEYS.globalCrawl);
+            
+            if (!stats && !crawl) {
+                migrateBtn.textContent = "Nothing to migrate";
+                setTimeout(() => { migrateBtn.disabled = false; migrateBtn.textContent = "Migrate DataStore to File"; }, 3000);
+                return;
+            }
+            
+            const payload = stats || { v: 1, savedAt: Date.now(), totalGames: 0, visitedCount: 0, champions: {} };
+            if (crawl) {
+                payload.crawl = crawl;
+            }
+            
+            const { saveGlobalStatsToFile } = window.__mdFileCacheRef || {};
+            if (saveGlobalStatsToFile) {
+                const ok = await saveGlobalStatsToFile(payload);
+                if (ok) {
+                    storeRemove(STORE_MODULES.global, STORE_KEYS.globalStats);
+                    storeRemove(STORE_MODULES.global, STORE_KEYS.globalCrawl);
+                    migrateBtn.textContent = "Migration Complete!";
+                    if (typeof Toast !== 'undefined') Toast.success("Migrated successfully! File Cache must be enabled to use it.");
+                    window.dispatchEvent(new Event("md-cache-reloaded"));
+                } else {
+                    migrateBtn.textContent = "Migration Cancelled";
+                }
+            } else {
+                migrateBtn.textContent = "Error: File module not ready";
+            }
+        } catch (err) {
+            migrateBtn.textContent = "Migration Failed";
+            console.error(err);
+        }
+        setTimeout(() => { 
+            migrateBtn.disabled = false; 
+            migrateBtn.textContent = "Migrate DataStore to File"; 
+        }, 3000);
+    };
+
+    migrateRow.appendChild(migrateBtn);
+
+    const migrateToStoreBtn = document.createElement("button");
+    migrateToStoreBtn.className = "aram-btn-start";
+    migrateToStoreBtn.textContent = "Migrate File to DataStore";
+    migrateToStoreBtn.style.cssText = "white-space: nowrap;";
+
+    migrateToStoreBtn.onclick = async () => {
+        migrateToStoreBtn.disabled = true;
+        migrateToStoreBtn.textContent = "Migrating...";
+        try {
+            const { readGlobalStatsFromFile } = window.__mdFileCacheRef || {};
+            if (!readGlobalStatsFromFile) {
+                migrateToStoreBtn.textContent = "Error: File module not ready";
+                setTimeout(() => { migrateToStoreBtn.disabled = false; migrateToStoreBtn.textContent = "Migrate File to DataStore"; }, 3000);
+                return;
+            }
+
+            const fileData = await readGlobalStatsFromFile();
+            if (!fileData) {
+                migrateToStoreBtn.textContent = "No file found";
+                setTimeout(() => { migrateToStoreBtn.disabled = false; migrateToStoreBtn.textContent = "Migrate File to DataStore"; }, 3000);
+                return;
+            }
+
+            // Separate crawl state from stats before writing to DataStore
+            const crawl = fileData.crawl || null;
+            delete fileData.crawl;
+
+            storeSet(STORE_MODULES.global, STORE_KEYS.globalStats, fileData);
+            if (crawl) {
+                storeSet(STORE_MODULES.global, STORE_KEYS.globalCrawl, crawl);
+            }
+
+            migrateToStoreBtn.textContent = "Migration Complete!";
+            if (typeof Toast !== 'undefined') Toast.success("Migrated file to DataStore. You can now disable File Cache.");
+            window.dispatchEvent(new Event("md-cache-reloaded"));
+        } catch (err) {
+            migrateToStoreBtn.textContent = "Migration Failed";
+            console.error(err);
+        }
+        setTimeout(() => {
+            migrateToStoreBtn.disabled = false;
+            migrateToStoreBtn.textContent = "Migrate File to DataStore";
+        }, 3000);
+    };
+
+    migrateRow.appendChild(migrateToStoreBtn);
+    root.appendChild(migrateRow);
+  }
+
+  // Global Champion Data section
+  const globalCacheTitle = document.createElement("h3");
+  globalCacheTitle.className = "md-settings-section-title";
+  globalCacheTitle.textContent = "Global Champion Data";
+  root.appendChild(globalCacheTitle);
+
+  const globalCacheRow = document.createElement("div");
+  globalCacheRow.className = "md-settings-row";
+
+  const globalCacheText = document.createElement("div");
+  globalCacheText.className = "md-settings-row-text";
+
+  const globalCacheLbl = document.createElement("div");
+  globalCacheLbl.className = "md-settings-row-label";
+  globalCacheLbl.textContent = "Crawl data";
+
+  const globalCacheDesc = document.createElement("div");
+  globalCacheDesc.className = "md-settings-row-desc";
+  globalCacheDesc.textContent =
+    "Clears aggregated champion stats and crawl state from the Global Champions tab. Does not affect your personal match history cache.";
+
+  globalCacheText.appendChild(globalCacheLbl);
+  globalCacheText.appendChild(globalCacheDesc);
+
+  const clearGlobalBtn = document.createElement("button");
+  clearGlobalBtn.className = "aram-btn-start";
+  clearGlobalBtn.textContent = "Clear Global Data";
+  clearGlobalBtn.style.cssText = "white-space:nowrap;";
+  clearGlobalBtn.onclick = () => {
+    try {
+      const { clearAllGlobalData } = window.__mdCacheRef || {};
+      const had = clearAllGlobalData ? clearAllGlobalData() : false;
+      clearGlobalBtn.textContent = had ? "Cleared!" : "Nothing to clear";
+      clearGlobalBtn.disabled = true;
+      window.dispatchEvent(new Event("md-cache-reloaded"));
+      setTimeout(() => {
+        clearGlobalBtn.textContent = "Clear Global Data";
+        clearGlobalBtn.disabled = false;
+      }, 3000);
+    } catch (e) {
+      clearGlobalBtn.textContent = "Failed";
+      setTimeout(() => {
+        clearGlobalBtn.textContent = "Clear Global Data";
+      }, 2000);
+    }
+  };
+
+  globalCacheRow.appendChild(globalCacheText);
+  globalCacheRow.appendChild(clearGlobalBtn);
+  root.appendChild(globalCacheRow);
+
+  // Cache section
   const cacheTitle = document.createElement("h3");
   cacheTitle.className = "md-settings-section-title";
   cacheTitle.textContent = "Cache";
@@ -520,7 +786,58 @@ export function renderSettingsTab(callbacks = {}) {
   cacheRow.appendChild(clearBtn);
   root.appendChild(cacheRow);
 
-  //  Updates section
+  // Crawler Tuning (Hidden unless unlocked)
+  if (_settings.enableGlobalCrawl) {
+    const crawlTitle = document.createElement("h3");
+    crawlTitle.className = "md-settings-section-title";
+    crawlTitle.textContent = "Crawler Tuning";
+    root.appendChild(crawlTitle);
+
+    root.appendChild(
+      makeNumberSetting(
+        "Target Games",
+        "Stop crawling once this many unique games are collected.",
+        "crawlTargetGames",
+        100,
+        500000,
+        100,
+      ),
+    );
+
+    root.appendChild(
+      makeNumberSetting(
+        "Max Players",
+        "Hard cap on the number of unique players to visit per session.",
+        "crawlMaxPlayers",
+        10,
+        50000,
+        10,
+      ),
+    );
+
+    root.appendChild(
+      makeNumberSetting(
+        "Concurrency",
+        "Number of parallel requests to the Riot SGP server.",
+        "crawlMaxConcurrent",
+        1,
+        10,
+      ),
+    );
+
+    root.appendChild(
+      makeNumberSetting(
+        "Request Delay (ms)",
+        "Minimum delay between individual match-list requests.",
+        "crawlDelayMs",
+        0,
+        2000,
+        5,
+      ),
+    );
+  }
+
+  // Updates section
   const updateTitle = document.createElement("h3");
   updateTitle.className = "md-settings-section-title";
   updateTitle.textContent = "Updates";

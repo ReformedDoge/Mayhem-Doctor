@@ -3,9 +3,10 @@
  * -shared myPuuid state-
  */
 
-import { SGP_MAP } from './config.js';
+import { BOOT_IDS } from './config.js';
+import Utils from './generalUtils.js';
 
-//  Static game data (at startup) 
+// Static game data (at startup) 
 export const ITEM_DATA           = {};
 export const AUGMENT_DATA        = {};
 export const CHAMPION_DATA       = {};
@@ -16,20 +17,26 @@ export const SUMMONER_SPELL_DATA = {};
 export let myPuuid = '';
 export function setMyPuuid(puuid) { myPuuid = puuid; }
 
-//  LCU fetch wrapper 
-export const LCU_API = {
-    get: async (path) => {
-        const r = await fetch(path);
-        if (!r.ok) throw new Error(`LCU ${r.status}: ${path}`);
-        return r.json();
-    }
-};
+// Shared LCU fetch wrapper from generalUtils.
+export const LCU_API = Utils.LCU;
 
-//  Static data loader for lookup and internal asset rendering (Items, Augments, Champions, Summoner spells)
+// Static data loader for lookup and internal asset rendering (Items, Augments, Champions, Summoner spells)
 export async function loadStaticData() {
     try {
         const items = await LCU_API.get('/lol-game-data/assets/v1/items.json');
-        items.forEach(i => { if (i.id && i.name) ITEM_DATA[i.id] = { name: i.name, icon: i.iconPath }; });
+        items.forEach(i => {
+            if (!i.id || !i.name) return;
+            ITEM_DATA[i.id] = { name: i.name, icon: i.iconPath };
+
+            // Augment BOOT_IDS with any boots not already in the hardcoded seed.
+            // No inStore filter — quest/special boots are valid if players can obtain
+            // them. If they don't appear in match data they contribute nothing anyway.
+            const cats = i.categories || [];
+            if (cats.includes('Boots') && i.id !== 1001 && !BOOT_IDS.has(i.id)) {
+                BOOT_IDS.add(i.id);
+                console.log(`[Mayhem-Doctor] Detected new boot from items.json: ${i.name} (${i.id})`);
+            }
+        });
 
         const augs = await LCU_API.get('/lol-game-data/assets/v1/cherry-augments.json');
         augs.forEach(a => { if (a.id && a.id > 0) AUGMENT_DATA[a.id] = { name: a.nameTRA || `Augment ${a.id}`, icon: a.augmentSmallIconPath || a.augmentIconPath, rarity: a.rarity || 'kSilver' }; });
@@ -43,7 +50,7 @@ export async function loadStaticData() {
     } catch (e) { console.error('[Mayhem-Doctor] Static data load failed:', e); }
 }
 
-//  Icon helpers
+// Icon helpers
 export function getChampionIcon(championId) {
     return `/lol-game-data/assets/v1/champion-icons/${championId}.png`;
 }
@@ -54,7 +61,7 @@ export function getSummonerSpellIcon(spellId) {
     return SUMMONER_SPELL_DATA[spellId]?.icon || '';
 }
 
-//  SGP auth context 
+// SGP auth context 
 /**
  * Returns { rso, sgpServer } for authenticated SGP requests.
  * Can use ent.accessToken or rso.token, Both works. 
@@ -63,35 +70,19 @@ export function getSummonerSpellIcon(spellId) {
  */
 export async function getSgpContext() {
     try {
-        const rsoResponse = await fetch('/lol-rso-auth/v1/authorization/access-token');
-        if (!rsoResponse.ok) throw new Error(`RSO token request failed: ${rsoResponse.status}`);
-        const rso = await rsoResponse.json();
-
-        const regionResponse = await fetch('/riotclient/region-locale');
-        if (!regionResponse.ok) throw new Error(`Region request failed: ${regionResponse.status}`);
-        const regionData = await regionResponse.json();
-        const rawRegion = (regionData?.region || 'EUW').toUpperCase();
-
-        let sgpServer = SGP_MAP[rawRegion];
-        if (!sgpServer) {
-            const normalizedRegion = rawRegion.replace(/\d+$/, '');
-            const keyMatch = Object.keys(SGP_MAP).find(k => k.startsWith(normalizedRegion));
-            sgpServer = keyMatch ? SGP_MAP[keyMatch] : SGP_MAP['EUW1'];
-        }
-        return { rso, sgpServer };
+        const { accessToken, sgpBase } = await Utils.GameData.getSgpContext();
+        return { rso: { token: accessToken }, sgpServer: sgpBase };
     } catch (err) {
         console.error('Failed to build SGP context:', err);
-        return { rso: null, sgpServer: SGP_MAP['EUW1'] };
+        return { rso: null, sgpServer: 'https://euc1-red.pp.sgp.pvp.net' };
     }
 }
 
-//  PUUID resolution 
+// PUUID resolution 
 /** Resolves "GameName#TAG" to { puuid, displayName } via the LCU. */
 export async function resolvePuuid(riotId) {
     const encoded = encodeURIComponent(riotId);
-    const res = await fetch(`/lol-summoner/v1/summoners?name=${encoded}`);
-    if (!res.ok) throw new Error(`Could not resolve Riot ID "${riotId}" (${res.status}). Make sure the format is GameName#TAG.`);
-    const summoner = await res.json();
+    const summoner = await LCU_API.get(`/lol-summoner/v1/summoners?name=${encoded}`);
     if (!summoner || !summoner.puuid) throw new Error(`No PUUID found for "${riotId}".`);
     return { puuid: summoner.puuid, displayName: summoner.displayName || riotId };
 }

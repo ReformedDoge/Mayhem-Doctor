@@ -10,6 +10,7 @@
 import { STYLES } from "./src/assets/styles.js";
 import aramIcon from "./src/assets/aram.svg?raw";
 
+import { Utils, migrateLegacyDatastore } from "./src/store.js";
 import { initResolver } from "./src/resolver.js";
 import {
   setFileCacheEnabled,
@@ -37,8 +38,10 @@ import {
   getSettings,
 } from "./src/ui/settings.js";
 
-export async function load() {
+export async function load(context) {
   initResolver(import.meta.url);
+  if (context) Utils.LCU.bind(context);
+  migrateLegacyDatastore();
 
   // Inject styles
   const styleEl = document.createElement("style");
@@ -61,11 +64,13 @@ export async function load() {
 
   await loadStaticData();
 
-  const observer = new MutationObserver(() => {
+  const runConfiguredInjections = () => {
     const settings = getSettings();
     if (settings.injectMatchHistoryButton) injectMatchHistoryButton();
     if (settings.injectInvestigatorTab) injectInvestigatorTab();
-    
+  };
+
+  const syncInvestigatorPanelOverlay = () => {
     const panel = document.getElementById(INVESTIGATOR_PANEL_ID);
     if (panel) {
       const modalHasContent = document.querySelector(
@@ -74,7 +79,15 @@ export async function load() {
       if (modalHasContent) panel.classList.add("mi-panel-overlay-hidden");
       else panel.classList.remove("mi-panel-overlay-hidden");
     }
-  });
+  };
+
+  Utils.DOM.observer.observe(".match-history-left-title", runConfiguredInjections);
+  Utils.DOM.observer.observe(
+    "lol-uikit-navigation-bar.style-profile-sub-nav",
+    runConfiguredInjections,
+  );
+
+  const observer = new MutationObserver(syncInvestigatorPanelOverlay);
   observer.observe(document.body, { childList: true, subtree: true });
 
   const smallAramIcon = aramIcon

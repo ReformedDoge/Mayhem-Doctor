@@ -3,8 +3,19 @@
  * expose the two public entry points used by UI.
  */
 
-import { VALID_QUEUE_IDS, BLACKLIST_ITEM_IDS } from "./config.js";
-import { LCU_API, getSgpContext, resolvePuuid, setMyPuuid } from "./lcu.js";
+import {
+  VALID_QUEUE_IDS,
+  BLACKLIST_ITEM_IDS,
+  BOOT_IDS,
+  SETTINGS,
+} from "./config.js";
+import {
+  LCU_API,
+  getSgpContext,
+  resolvePuuid,
+  setMyPuuid,
+  ITEM_DATA,
+} from "./lcu.js";
 import { readCacheEntry, saveCacheEntry, readCacheIndex } from "./cache.js";
 import { loadSettings } from "./ui/settings.js";
 
@@ -13,14 +24,17 @@ import { loadSettings } from "./ui/settings.js";
 // Pulls small-n estimates toward 50% and lets large-n drift to their true rate.
 const LAPLACE_K = 3;
 
+// Common Boot IDs for filtering are imported from config.js
+
 export function smoothedWinRate(wins, games) {
   return ((wins + LAPLACE_K) / (games + 2 * LAPLACE_K)) * 100;
 }
 
 // Shared build-order derivation used by parseGame and buildGlobalStats
 export function deriveOrderedBuild(itemSlots, legendaryItemsUsed) {
+  // Allow boots to bypass the blacklist here so analyzeChampBuildPath can see them
   const finalItems = itemSlots.filter(
-    (id) => id && !BLACKLIST_ITEM_IDS.has(id),
+    (id) => id && (!BLACKLIST_ITEM_IDS.has(id) || BOOT_IDS.has(id)),
   );
   const rawLegendaries = legendaryItemsUsed || [];
   const uniqueLegendaries = [...new Set(rawLegendaries)];
@@ -31,7 +45,7 @@ export function deriveOrderedBuild(itemSlots, legendaryItemsUsed) {
   return [...keptLegendaries, ...otherItems];
 }
 
-//  Game parser
+// Game parser
 /**
  * Parses one raw SGP game into a compact history entry for a given PUUID.
  * Returns null if the game is wrong mode or the player isn't found.
@@ -154,7 +168,7 @@ export function parseGame(g, puuid) {
   };
 }
 
-//  Stats accumulator
+// Stats accumulator
 /** Merges a parsed history entry into the running stats object. */
 export function accumulateStats(stats, entry) {
   if (entry.result === "Remake") {
@@ -310,7 +324,7 @@ export function buildGlobalStats(fullHistory) {
   return { stats, champGames, champItemStats, champAugStats };
 }
 
-//  SGP fetcher
+// SGP fetcher
 /**
  * Fetches desired games from SGP starting at startIndex, parsing and appending
  * to fullHistory until requestedCount is reached or the API is exhausted.
@@ -364,7 +378,7 @@ export async function fetchGamesFromSGP(
   return { history: fullHistory, oldestStartIndex: oldestAcceptedStartIndex };
 }
 
-//  Core analysis orchestrator
+// Core analysis orchestrator
 export async function runAnalysis(
   puuid,
   requestedGameCount,
@@ -473,7 +487,7 @@ export async function runAnalysis(
   onProgress({ finalStats: stats, fullHistory: mergedHistory });
 }
 
-//  Public entry points
+// Public entry points
 export async function startSelfAnalysis(updateUICallback, requestedGameCount) {
   try {
     updateUICallback({ status: "Connecting to Riot Servers…" });
@@ -587,13 +601,8 @@ export async function getHomeDashboardData() {
 
     const topChamps = Object.values(champStats)
       .sort((a, b) => {
-        // Calculate Net Wins (Wins - Losses)
         const netA = a.wins - (a.games - a.wins);
         const netB = b.wins - (b.games - b.wins);
-
-        // Sort by Net Wins (highest first)
-        // Tie-break #1: Win Rate
-        // Tie-break #2: Games Played
         return (
           netB - netA ||
           b.wins / b.games - a.wins / a.games ||
@@ -601,15 +610,6 @@ export async function getHomeDashboardData() {
         );
       })
       .slice(0, 8);
-
-    /* .sort((a, b) => b.games - a.games || (b.wins / b.games) - (a.wins / a.games))
-      .slice(0, 4); */
-
-    /* .sort((a, b) => smoothedWinRate(b.wins, b.games) - smoothedWinRate(a.wins, a.games) || b.games - a.games)
-      .slice(0, 4); */
-
-    /* .sort((a, b) => (b.wins / b.games) - (a.wins / a.games) || b.games - a.games)
-      .slice(0, 4); */
 
     const allTimeChampStats = {};
     const allTimeDiversitySet = new Set();
@@ -632,7 +632,6 @@ export async function getHomeDashboardData() {
     const gamesCount = stats.wins + stats.losses;
     const totalMinutes = Math.max(1, stats.duration / 60);
 
-    // Format Lifetime Time
     const totalSecs = allTimeDuration;
     const d = Math.floor(totalSecs / 86400);
     const h = Math.floor((totalSecs % 86400) / 3600);
@@ -667,5 +666,154 @@ export async function getHomeDashboardData() {
   } catch (e) {
     console.error("[MD] Dashboard data fetch failed:", e);
     return null;
+  }
+}
+
+/**
+ * Advanced on-demand build path analysis for a specific champion.
+ *
+ * For each viable first-item (slot-1), games are partitioned into the subset
+ * where that item was actually built first. Subsequent slots are derived from
+ * within that subset, so path tails reflect what won given that specific opener
+ * rather than what wins globally in slot-2/3/4.
+ *
+ * Falls back to global slot stats when the conditional subset is too thin
+ * (< minGamesPerSlot). The path label indicates which mode was used.
+ *
+ * @param {object[]} games        Per-champion game records { win, orderedBuild, augments }
+ * @param {object}   cItemStats   Per-item { games, wins } for overall WR blending
+ * @param {number}   synergyWeight Blend factor between power score and pairwise synergy [0-1]
+ */
+export function analyzeChampBuildPath(
+  games,
+  cItemStats = {},
+  synergyWeight = SETTINGS.synergyWeight ?? 0.3,
+) {
+  if (!games || games.length < 5) return null;
+
+  // BOOTS SECTION
+  const bootStats = {};
+  games.forEach((g) => {
+    const boots = (g.orderedBuild || []).filter((id) => BOOT_IDS.has(id));
+    boots.forEach((id) => {
+      if (!bootStats[id]) bootStats[id] = { games: 0, wins: 0 };
+      bootStats[id].games++;
+      if (g.win) bootStats[id].wins++;
+    });
+  });
+
+  const rankedBoots = Object.entries(bootStats)
+    .map(([id, d]) => ({
+      id: Number(id),
+      games: d.games,
+      wr: smoothedWinRate(d.wins, d.games),
+    }))
+    // Relax threshold so small per-player samples can still show boots
+    .filter((b) => b.games >= Math.max(1, Math.ceil(games.length * 0.02)))
+    .sort((a, b) => b.wr - a.wr)
+    .slice(0, 3);
+
+  // ITEM PATHS
+  const legendariesGames = games
+    .map((g) => ({
+      win: g.win,
+      // Strictly filter out boots for the path logic
+      build: (g.orderedBuild || []).filter((id) => !BOOT_IDS.has(id)),
+    }))
+    .filter((g) => g.build.length > 0);
+
+  if (legendariesGames.length === 0) return { paths: [], rankedBoots };
+
+  // Find all items ever built in the 1st slot
+  const firstItemStats = {};
+  legendariesGames.forEach((g) => {
+    const firstId = g.build[0];
+    if (!firstItemStats[firstId])
+      firstItemStats[firstId] = { games: 0, wins: 0 };
+    firstItemStats[firstId].games++;
+    if (g.win) firstItemStats[firstId].wins++;
+  });
+
+  // Rank unique starters by Blend (Pickrate + Winrate)
+  const rankedStarters = Object.entries(firstItemStats)
+    .filter(([id, d]) => d.games >= Math.max(3, legendariesGames.length * 0.01))
+    .map(([id, d]) => {
+      const wr = smoothedWinRate(d.wins, d.games);
+      const freqScore = (d.games / legendariesGames.length) * 100;
+      const wrScore = Math.max(0, (wr - 40) * 4);
+      const blendedScore =
+        freqScore * (1 - synergyWeight) + wrScore * synergyWeight;
+      return { id: Number(id), wr, blendedScore, games: d.games };
+    })
+    .sort((a, b) => b.blendedScore - a.blendedScore);
+
+  // Pick top 3 unique starters, then RE-SORT by Win Rate so "Best" is Primary
+  //const chosenAnchors = rankedStarters.slice(0, 3).sort((a, b) => b.wr - a.wr);
+  const chosenAnchors = rankedStarters.slice(0, 3);
+
+  const finalPaths = chosenAnchors.map((anchor, idx) => {
+    const subset = legendariesGames.filter((g) => g.build[0] === anchor.id);
+    const followerStats = {};
+    subset.forEach((g) => {
+      const followers = [...new Set(g.build.slice(1))];
+      followers.forEach((id) => {
+        if (!followerStats[id])
+          followerStats[id] = { games: 0, wins: 0, slotSum: 0 };
+        followerStats[id].games++;
+        if (g.win) followerStats[id].wins++;
+        followerStats[id].slotSum += g.build.indexOf(id);
+      });
+    });
+
+    const rankedFollowers = Object.entries(followerStats)
+      .filter(([id, d]) => d.games >= Math.max(2, subset.length * 0.05))
+      .map(([id, d]) => {
+        const wr = smoothedWinRate(d.wins, d.games);
+        const blended =
+          (d.games / subset.length) * 100 * (1 - synergyWeight) +
+          Math.max(0, (wr - 40) * 4) * synergyWeight;
+        return { id: Number(id), wr, avgSlot: d.slotSum / d.games, blended };
+      })
+      .sort((a, b) => b.blended - a.blended)
+      .slice(0, 3);
+
+    rankedFollowers.sort((a, b) => a.avgSlot - b.avgSlot);
+
+    return {
+      items: [
+        { id: anchor.id, wr: anchor.wr },
+        ...rankedFollowers.map((f) => ({ id: f.id, wr: f.wr })),
+      ],
+      label:
+        idx === 0
+          ? `Primary Path · ${anchor.wr.toFixed(1)}% WR`
+          : `Alternative Path #${idx} · ${anchor.wr.toFixed(1)}% WR`,
+    };
+  });
+
+  return { paths: finalPaths, rankedBoots };
+}
+
+/**
+ * Calculates a win-rate based HSL color.
+ * >= 50%: Green shades (brighter as it increases)
+ * < 50%: Red shades (darker as it decreases)
+ * Relative to minWR and maxWR bounds.
+ */
+export function getWRColor(wr, minWR, maxWR) {
+  if (wr >= 50) {
+    const range = maxWR - 50;
+    const p = range > 0 ? (wr - 50) / range : 0;
+    const h = 140 + p * 10;
+    const s = 45 + p * 55;
+    const l = 40 + p * 25;
+    return `hsl(${h}, ${s}%, ${l}%)`;
+  } else {
+    const range = 50 - minWR;
+    const p = range > 0 ? (wr - minWR) / range : 0;
+    const h = 0;
+    const s = 90 - p * 45;
+    const l = 45 + p * 5;
+    return `hsl(${h}, ${s}%, ${l}%)`;
   }
 }
