@@ -16,6 +16,7 @@ const DEFAULT_SETTINGS = {
   popoutWindowSize: "standard",
   popoutWindowWidth: 1360,
   popoutWindowHeight: 860,
+  popoutWindowZoom: 1.1,
   checkUpdates: true,
   dashboardLookback: 20,
   lastAnalysisCount: 50,
@@ -414,18 +415,78 @@ export function renderSettingsTab(callbacks = {}) {
   windowTitle.textContent = "Window behavior";
   root.appendChild(windowTitle);
 
+  function makeWindowZoomControl() {
+    const settingKey = "popoutWindowZoom";
+    const row = document.createElement("div");
+    row.className = "md-settings-row";
+
+    const textWrap = document.createElement("div");
+    textWrap.className = "md-settings-row-text";
+
+    const lbl = document.createElement("div");
+    lbl.className = "md-settings-row-label";
+    lbl.textContent = "Window zoom";
+
+    const desc = document.createElement("div");
+    desc.className = "md-settings-row-desc";
+    desc.textContent = "Adjusts the scale of the pop out window content.";
+
+    textWrap.appendChild(lbl);
+    textWrap.appendChild(desc);
+
+    const controlWrap = document.createElement("div");
+    controlWrap.className = "md-settings-control-row";
+
+    const zoomInput = document.createElement("input");
+    zoomInput.type = "number";
+    zoomInput.className = "aram-number-input md-settings-dim-input";
+    zoomInput.min = "0.5";
+    zoomInput.max = "2.5";
+    zoomInput.step = "0.1";
+    zoomInput.value = _settings[settingKey] || 1.1;
+
+    zoomInput.onchange = () => {
+      let value = parseFloat(zoomInput.value);
+      if (isNaN(value)) value = 1.1;
+      value = Math.max(0.5, Math.min(2.5, value));
+      zoomInput.value = value.toFixed(1);
+      setSetting(settingKey, value);
+    };
+
+    window.addEventListener("md-settings-sync-window", () => {
+      zoomInput.value = _settings[settingKey] || 1.1;
+    });
+
+    controlWrap.appendChild(zoomInput);
+    row.appendChild(textWrap);
+    row.appendChild(controlWrap);
+
+    return { row, zoomInput };
+  }
+
+  function setWindowZoomControlDisabled(control, disabled) {
+    control.row.classList.toggle("md-settings-row-disabled", disabled);
+    control.zoomInput.disabled = disabled;
+  }
+
   const windowSizeControl = makeWindowSizeControl();
+  const windowZoomControl = makeWindowZoomControl();
 
   const popoutToggle = makeToggle(
     "Pop out window",
     "Opens in a separate window instead of an in-client modal.",
     "openModalInNewWindow",
-    (enabled) => setWindowSizeControlDisabled(windowSizeControl, !enabled),
+    (enabled) => {
+      setWindowSizeControlDisabled(windowSizeControl, !enabled);
+      setWindowZoomControlDisabled(windowZoomControl, !enabled);
+    }
   );
   root.appendChild(popoutToggle);
 
   root.appendChild(windowSizeControl.row);
+  root.appendChild(windowZoomControl.row);
   setWindowSizeControlDisabled(windowSizeControl, !_settings.openModalInNewWindow);
+  setWindowZoomControlDisabled(windowZoomControl, !_settings.openModalInNewWindow);
 
   // Dashboard Settings
   const dashTitle = document.createElement("h3");

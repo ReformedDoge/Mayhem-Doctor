@@ -123,6 +123,11 @@ function ensurePopupDocument(win, title) {
   styleEl.textContent = `${STYLES}\n${POPUP_WINDOW_STYLES}`;
   doc.head.appendChild(styleEl);
 
+  const settings = getSettings();
+  if (settings.popoutWindowZoom) {
+    doc.body.style.zoom = settings.popoutWindowZoom;
+  }
+
   const root = doc.createElement("div");
   root.className = "aram-popout-window";
 
