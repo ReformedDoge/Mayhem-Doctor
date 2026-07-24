@@ -175,6 +175,7 @@ export const STYLES = `
     border-radius: 4px;
     object-fit: cover;
     background: #000;
+    margin-right: 10px;
 }
 
 .aram-win-high  { color: #2de0a5; font-weight: bold; }

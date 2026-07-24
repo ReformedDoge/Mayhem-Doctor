@@ -34,7 +34,8 @@ export async function loadStaticData() {
             const cats = i.categories || [];
             if (cats.includes('Boots') && i.id !== 1001 && !BOOT_IDS.has(i.id)) {
                 BOOT_IDS.add(i.id);
-                console.log(`[Mayhem-Doctor] Detected new boot from items.json: ${i.name} (${i.id})`);
+                // uncomment for debugging new boots added by Riot in future patches.
+                // console.log(`[Mayhem-Doctor] Detected new boot from items.json: ${i.name} (${i.id})`);
             }
         });
 

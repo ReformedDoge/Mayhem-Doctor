@@ -717,8 +717,10 @@ export function analyzeChampBuildPath(
   const legendariesGames = games
     .map((g) => ({
       win: g.win,
-      // Strictly filter out boots for the path logic
-      build: (g.orderedBuild || []).filter((id) => !BOOT_IDS.has(id)),
+      // Strictly filter out boots and dynamically filter blacklisted items
+      build: (g.orderedBuild || []).filter(
+        (id) => !BOOT_IDS.has(id) && !BLACKLIST_ITEM_IDS.has(Number(id))
+      ),
     }))
     .filter((g) => g.build.length > 0);
 
