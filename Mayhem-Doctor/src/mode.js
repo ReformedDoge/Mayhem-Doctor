@@ -8,7 +8,7 @@ const MODE_CONFIG = {
     queueId: 2400,
     storePrefix: '',
     filePrefix: '',
-    label: 'Official Mayhem',
+    label: 'Mayhem',
     shortLabel: 'Official',
     cacheStoreModule: 'mayhemDoctorCache',
     globalStoreModule: 'mayhemDoctorGlobal',
