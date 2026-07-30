@@ -1,3 +1,5 @@
+import { Mode, getPatchFilterStoreModule } from '../mode.js';
+
 /**
  * Floating patch-version filter pill + dropdown with checkbox list.
  *
@@ -27,18 +29,18 @@ function sortedPatches(patchSet) {
 }
 
 // Store persistence
-async function loadExcluded() {
+async function loadExcluded(mode = Mode.OFFICIAL) {
     try {
-        const raw = storeGet(STORE_MODULES.patchFilter, STORE_KEYS.patchExcluded, []);
+        const raw = storeGet(getPatchFilterStoreModule(mode), STORE_KEYS.patchExcluded, []);
         return new Set(Array.isArray(raw) ? raw : []);
     } catch {
         return new Set();
     }
 }
 
-async function saveExcluded(excludedSet) {
+async function saveExcluded(excludedSet, mode = Mode.OFFICIAL) {
     try {
-        storeSet(STORE_MODULES.patchFilter, STORE_KEYS.patchExcluded, [...excludedSet]);
+        storeSet(getPatchFilterStoreModule(mode), STORE_KEYS.patchExcluded, [...excludedSet]);
     } catch {
         // filter still works in-memory
     }
@@ -56,10 +58,11 @@ export async function createPatchFilter(
     allVersionStrings,
     onChange,
     doc = document,
+    mode = Mode.OFFICIAL,
 ) {
     // Deduplicate + convert to Major.Minor labels
     const allPatches   = sortedPatches(new Set(allVersionStrings.map(toPatchLabel)));
-    const excludedSet  = await loadExcluded();
+    const excludedSet  = await loadExcluded(mode);
 
     // Prune any stored exclusions that no longer exist in this dataset
     for (const exc of excludedSet) {
@@ -158,7 +161,7 @@ export async function createPatchFilter(
     // Commit changes 
     function commit() {
         updatePill();
-        saveExcluded(excludedSet);
+        saveExcluded(excludedSet, mode);
         onChange(new Set(excludedSet));
     }
 

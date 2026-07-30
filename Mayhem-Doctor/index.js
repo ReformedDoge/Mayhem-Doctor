@@ -37,6 +37,7 @@ import {
   checkForUpdates,
   getSettings,
 } from "./src/ui/settings.js";
+import { Mode } from "./src/mode.js";
 
 export async function load(context) {
   initResolver(import.meta.url);
@@ -48,19 +49,33 @@ export async function load(context) {
   styleEl.textContent = STYLES;
   document.head.appendChild(styleEl);
 
-  // Expose clearAllCache / clearAllGlobalData so the settings tab renderer can call
-  // them without creating a circular import through the UI layer.
-  // Also expose file cache helpers for the settings UI path display.
-  window.__mdCacheRef = { clearAllCache, clearAllGlobalData };
-  window.__mdFileCacheRef = { isGlobalStatsDirty, saveGlobalStatsToFile, readGlobalStatsFromFile, getExpectedFilePath };
-
   await loadSettings();
+  Utils.Debug.setEnabled(getSettings().debugLogs);
   if (getSettings().checkUpdates) checkForUpdates();
 
   // Apply file cache setting before loading static data so the flag is ready
   // when initGlobalFileCache fetches the file.
   setFileCacheEnabled(getSettings().useFileGlobalCache);
-  await initGlobalFileCache();
+  await initGlobalFileCache(Mode.OFFICIAL);
+  await initGlobalFileCache(Mode.CLASSIC);
+
+  // Expose cache refs for settings UI and dual-mode support
+  window.__mdCacheRef = {
+    clearAllCache,
+    clearAllGlobalData,
+    clearAllClassicCache: () => clearAllCache(Mode.CLASSIC),
+    clearAllClassicGlobal: () => clearAllGlobalData(Mode.CLASSIC),
+    clearOfficialCache: () => clearAllCache(Mode.OFFICIAL),
+    clearOfficialGlobal: () => clearAllGlobalData(Mode.OFFICIAL),
+  };
+  window.__mdFileCacheRef = {
+    isGlobalStatsDirty,
+    saveGlobalStatsToFile,
+    readGlobalStatsFromFile,
+    getExpectedFilePath,
+    saveToFile: (data, mode) => saveGlobalStatsToFile(data, mode || Mode.OFFICIAL),
+    getExpectedPath: (mode) => getExpectedFilePath(mode || Mode.OFFICIAL),
+  };
 
   await loadStaticData();
 
@@ -119,19 +134,21 @@ export async function load(context) {
 
   CommandBar.addAction({
     id: "mayhem-doctor-clear-cache",
-    name: "Mayhem Doctor — Clear Cache",
+    name: "Mayhem Doctor - Clear Cache",
     legend: "Wipes all cached match history",
     icon: smallAramIcon,
     tags: ["aram", "mayhem", "cache", "clear", "reset"],
     group: "ARAM",
     perform: () => {
       try {
-        const count = clearAllCache();
+        const official = clearAllCache(Mode.OFFICIAL);
+        const classic = clearAllCache(Mode.CLASSIC);
+        const total = official + classic;
         Toast.success(
-          `Mayhem Doctor: cleared cache for ${count} player${count !== 1 ? "s" : ""}.`,
+          `Mayhem Doctor: cleared cache (${official} official, ${classic} classic, ${total} total).`,
         );
       } catch (e) {
-        Toast.error(`Mayhem Doctor: failed to clear cache — ${e.message}`);
+        Toast.error(`Mayhem Doctor: failed to clear cache - ${e.message}`);
       }
     },
   });

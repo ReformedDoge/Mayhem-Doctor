@@ -7,6 +7,9 @@ export const STORE_MODULES = {
   cache: "mayhemDoctorCache",
   global: "mayhemDoctorGlobal",
   patchFilter: "mayhemDoctorPatchFilter",
+  classicCache: "mayhemDoctorClassicCache",
+  classicGlobal: "mayhemDoctorClassicGlobal",
+  classicPatchFilter: "mayhemDoctorClassicPatchFilter",
 };
 
 export const STORE_KEYS = {
@@ -123,6 +126,10 @@ function migratePatchFilter() {
   setModuleSchemaVersion(STORE_MODULES.patchFilter);
 }
 
+function migrateModuleSchemaVersion(moduleName) {
+  setModuleSchemaVersion(moduleName);
+}
+
 function migrateCache() {
   const index = legacyGet(LEGACY_KEYS.cacheIndex);
   const puuids = Array.isArray(index?.puuids) ? index.puuids : [];
@@ -189,6 +196,6 @@ export function migrateLegacyDatastore() {
     migrateCache();
     migrateGlobalStats();
   } catch (error) {
-    console.error("[Mayhem-Doctor] DataStore migration failed:", error);
+    Utils.Debug.error("[Mayhem-Doctor] DataStore migration failed:", error);
   }
 }

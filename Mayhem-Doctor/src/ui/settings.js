@@ -4,6 +4,8 @@
 
 import { ENABLE_GLOBAL_CRAWL } from "../config.js";
 import { STORE_KEYS, STORE_MODULES, storeGet, storeRemove, storeSet } from "../store.js";
+import { Mode, getGlobalStoreModule, getGlobalStatsFile, getGlobalStatsFileName } from "../mode.js";
+import Utils from "../generalUtils.js";
 
 const GITHUB_RELEASES_API =
   "https://api.github.com/repos/ReformedDoge/Mayhem-Doctor/releases/latest";
@@ -33,6 +35,9 @@ const DEFAULT_SETTINGS = {
   crawlMaxConcurrent: 2,
   crawlDelayMs: 75,
   crawlSaveEvery: 10,
+
+  // Developer
+  debugLogs: false,
 };
 
 let _settings = { ...DEFAULT_SETTINGS };
@@ -99,13 +104,11 @@ async function syncVersionWithMetadata() {
       const parsed = parseVersion(match[1]);
       if (parsed) {
         CURRENT_VERSION = parsed;
-        console.log(
-          `[Mayhem-Doctor] Version synced from metadata: v${CURRENT_VERSION.join(".")}`,
-        );
+        Utils.Debug.log(`[Mayhem-Doctor] Version synced from metadata: v${CURRENT_VERSION.join(".")}`);
       }
     }
   } catch (err) {
-    console.warn("[Mayhem-Doctor] Failed to sync version from metadata:", err);
+    Utils.Debug.warn("[Mayhem-Doctor] Failed to sync version from metadata:", err);
   }
 }
 
@@ -141,7 +144,7 @@ export async function checkForUpdates(force = false) {
     }
     if (_badgeCallback) _badgeCallback(_latestRelease);
   } catch (err) {
-    console.warn("[Mayhem-Doctor] Update check failed:", err);
+    Utils.Debug.warn("[Mayhem-Doctor] Update check failed:", err);
   } finally {
     _updatePending = false;
   }
@@ -610,10 +613,11 @@ export function renderSettingsTab(callbacks = {}) {
                 const { setFileCacheEnabled } = await import("../fileCache.js");
                 setFileCacheEnabled(enabled);
                 const { reloadCacheMode } = await import("../globalCache.js");
-                await reloadCacheMode(enabled);
+                await reloadCacheMode(enabled, Mode.OFFICIAL);
+                await reloadCacheMode(enabled, Mode.CLASSIC);
                 window.dispatchEvent(new Event("md-cache-reloaded"));
             } catch (e) {
-                console.error("[MD-Settings] Error seamlessly toggling cache mode:", e);
+                Utils.Debug.error("[MD-Settings] Error seamlessly toggling cache mode:", e);
             }
         }
       ),
@@ -627,123 +631,145 @@ export function renderSettingsTab(callbacks = {}) {
     fileCacheDesc.className = "md-settings-row-desc";
     fileCacheDesc.style.cssText = "font-size:11px; color:#666; line-height:1.6;";
 
-    const { getExpectedFilePath } = window.__mdFileCacheRef || {};
-    let filePath = getExpectedFilePath ? getExpectedFilePath() : "data/md-global-stats.json";
-    
-    if (filePath.includes("https://plugins/")) {
-        filePath = filePath.replace("https://plugins/", "Pengu Loader\\plugins\\").replace(/\//g, "\\");
-    } else {
-        filePath = "Pengu Loader\\plugins\\Mayhem-Doctor\\data\\md-global-stats.json";
+    const { getExpectedPath } = window.__mdFileCacheRef || {};
+    function fmtPath(mode) {
+      let p = getExpectedPath ? getExpectedPath(mode) : "data/md-global-stats.json";
+      if (p.includes("https://plugins/")) {
+        p = p.replace("https://plugins/", "Pengu Loader\\plugins\\").replace(/\//g, "\\");
+      } else {
+        p = "Pengu Loader\\plugins\\Mayhem-Doctor\\data\\" + (mode === Mode.OFFICIAL ? "md-global-stats.json" : "classic-md-global-stats.json");
+      }
+      return p;
     }
 
     fileCacheDesc.innerHTML =
       `When saving after a crawl, save the file to your plugin's data\\ folder so it loads automatically on startup.<br>` +
-      `Expected path: <code style="color:#c8aa6e; font-size:10px;">...\\${filePath}</code>`;
+      `<b>Official:</b> <code style="color:#c8aa6e; font-size:10px;">...\\${fmtPath(Mode.OFFICIAL)}</code><br>` +
+      `<b>Classic:</b> <code style="color:#c8aa6e; font-size:10px;">...\\${fmtPath(Mode.CLASSIC)}</code>`;
 
     fileCacheNote.appendChild(fileCacheDesc);
     root.appendChild(fileCacheNote);
 
-    const migrateRow = document.createElement("div");
-    migrateRow.className = "md-settings-row";
-    migrateRow.style.cssText = "flex-direction: row; gap: 10px; border-top: none; padding-top: 5px;";
-    
-    const migrateBtn = document.createElement("button");
-    migrateBtn.className = "aram-btn-start";
-    migrateBtn.textContent = "Migrate DataStore to File";
-    migrateBtn.style.cssText = "white-space: nowrap;";
-    
-    migrateBtn.onclick = async () => {
-        migrateBtn.disabled = true;
-        migrateBtn.textContent = "Migrating...";
-        try {
-            const stats = storeGet(STORE_MODULES.global, STORE_KEYS.globalStats);
-            const crawl = storeGet(STORE_MODULES.global, STORE_KEYS.globalCrawl);
-            
+    function createMigrateBtn(mode, fromStore, toStore, text, successMsg) {
+      const btn = document.createElement("button");
+      btn.className = "aram-btn-start";
+      btn.textContent = text;
+      btn.style.cssText = "white-space: nowrap;";
+
+      if (fromStore) {
+        btn.onclick = async () => {
+          btn.disabled = true;
+          btn.textContent = "Migrating " + (mode === Mode.OFFICIAL ? "Official" : "Classic") + "...";
+          try {
+            const storeMod = getGlobalStoreModule(mode);
+            const stats = storeGet(storeMod, STORE_KEYS.globalStats);
+            const crawl = storeGet(storeMod, STORE_KEYS.globalCrawl);
+
             if (!stats && !crawl) {
-                migrateBtn.textContent = "Nothing to migrate";
-                setTimeout(() => { migrateBtn.disabled = false; migrateBtn.textContent = "Migrate DataStore to File"; }, 3000);
-                return;
+              btn.textContent = "Nothing to migrate";
+              setTimeout(() => { btn.disabled = false; btn.textContent = text; }, 3000);
+              return;
             }
-            
+
             const payload = stats || { v: 1, savedAt: Date.now(), totalGames: 0, visitedCount: 0, champions: {} };
-            if (crawl) {
-                payload.crawl = crawl;
-            }
-            
+            if (crawl) payload.crawl = crawl;
+
             const { saveGlobalStatsToFile } = window.__mdFileCacheRef || {};
             if (saveGlobalStatsToFile) {
-                const ok = await saveGlobalStatsToFile(payload);
-                if (ok) {
-                    storeRemove(STORE_MODULES.global, STORE_KEYS.globalStats);
-                    storeRemove(STORE_MODULES.global, STORE_KEYS.globalCrawl);
-                    migrateBtn.textContent = "Migration Complete!";
-                    if (typeof Toast !== 'undefined') Toast.success("Migrated successfully! File Cache must be enabled to use it.");
-                    window.dispatchEvent(new Event("md-cache-reloaded"));
-                } else {
-                    migrateBtn.textContent = "Migration Cancelled";
-                }
+              const ok = await saveGlobalStatsToFile(payload, mode);
+              if (ok) {
+                storeRemove(storeMod, STORE_KEYS.globalStats);
+                storeRemove(storeMod, STORE_KEYS.globalCrawl);
+                btn.textContent = "Complete!";
+                if (typeof Toast !== 'undefined') Toast.success(successMsg);
+                window.dispatchEvent(new Event("md-cache-reloaded"));
+              } else {
+                btn.textContent = "Cancelled";
+              }
             } else {
-                migrateBtn.textContent = "Error: File module not ready";
+              btn.textContent = "Error: File module not ready";
             }
-        } catch (err) {
-            migrateBtn.textContent = "Migration Failed";
-            console.error(err);
-        }
-        setTimeout(() => { 
-            migrateBtn.disabled = false; 
-            migrateBtn.textContent = "Migrate DataStore to File"; 
-        }, 3000);
-    };
-
-    migrateRow.appendChild(migrateBtn);
-
-    const migrateToStoreBtn = document.createElement("button");
-    migrateToStoreBtn.className = "aram-btn-start";
-    migrateToStoreBtn.textContent = "Migrate File to DataStore";
-    migrateToStoreBtn.style.cssText = "white-space: nowrap;";
-
-    migrateToStoreBtn.onclick = async () => {
-        migrateToStoreBtn.disabled = true;
-        migrateToStoreBtn.textContent = "Migrating...";
-        try {
+          } catch (err) {
+            btn.textContent = "Failed";
+            Utils.Debug.error(err);
+          }
+          setTimeout(() => { btn.disabled = false; btn.textContent = text; }, 3000);
+        };
+      } else {
+        btn.onclick = async () => {
+          btn.disabled = true;
+          btn.textContent = "Migrating " + (mode === Mode.OFFICIAL ? "Official" : "Classic") + "...";
+          try {
             const { readGlobalStatsFromFile } = window.__mdFileCacheRef || {};
             if (!readGlobalStatsFromFile) {
-                migrateToStoreBtn.textContent = "Error: File module not ready";
-                setTimeout(() => { migrateToStoreBtn.disabled = false; migrateToStoreBtn.textContent = "Migrate File to DataStore"; }, 3000);
-                return;
+              btn.textContent = "Error: File module not ready";
+              setTimeout(() => { btn.disabled = false; btn.textContent = text; }, 3000);
+              return;
             }
 
-            const fileData = await readGlobalStatsFromFile();
+            const fileData = await readGlobalStatsFromFile(mode);
             if (!fileData) {
-                migrateToStoreBtn.textContent = "No file found";
-                setTimeout(() => { migrateToStoreBtn.disabled = false; migrateToStoreBtn.textContent = "Migrate File to DataStore"; }, 3000);
-                return;
+              btn.textContent = "No file found";
+              setTimeout(() => { btn.disabled = false; btn.textContent = text; }, 3000);
+              return;
             }
 
-            // Separate crawl state from stats before writing to DataStore
             const crawl = fileData.crawl || null;
             delete fileData.crawl;
 
-            storeSet(STORE_MODULES.global, STORE_KEYS.globalStats, fileData);
-            if (crawl) {
-                storeSet(STORE_MODULES.global, STORE_KEYS.globalCrawl, crawl);
-            }
+            const storeMod = getGlobalStoreModule(mode);
+            storeSet(storeMod, STORE_KEYS.globalStats, fileData);
+            if (crawl) storeSet(storeMod, STORE_KEYS.globalCrawl, crawl);
 
-            migrateToStoreBtn.textContent = "Migration Complete!";
-            if (typeof Toast !== 'undefined') Toast.success("Migrated file to DataStore. You can now disable File Cache.");
+            btn.textContent = "Complete!";
+            if (typeof Toast !== 'undefined') Toast.success(successMsg);
             window.dispatchEvent(new Event("md-cache-reloaded"));
-        } catch (err) {
-            migrateToStoreBtn.textContent = "Migration Failed";
-            console.error(err);
-        }
-        setTimeout(() => {
-            migrateToStoreBtn.disabled = false;
-            migrateToStoreBtn.textContent = "Migrate File to DataStore";
-        }, 3000);
-    };
+          } catch (err) {
+            btn.textContent = "Failed";
+            Utils.Debug.error(err);
+          }
+          setTimeout(() => { btn.disabled = false; btn.textContent = text; }, 3000);
+        };
+      }
 
-    migrateRow.appendChild(migrateToStoreBtn);
-    root.appendChild(migrateRow);
+      return btn;
+    }
+
+    const modes = [Mode.OFFICIAL, Mode.CLASSIC];
+    const modeLabels = { [Mode.OFFICIAL]: "Official", [Mode.CLASSIC]: "Classic" };
+
+    for (const mode of modes) {
+      const migrateRow = document.createElement("div");
+      migrateRow.className = "md-settings-row";
+      migrateRow.style.cssText = "flex-direction: row; gap: 10px; border-top: none; padding-top: 5px;";
+
+      const label = document.createElement("span");
+      label.style.cssText = "font-size:11px; font-weight:bold; color:#c8aa6e; min-width:60px; align-self:center;";
+      label.textContent = modeLabels[mode] + ":";
+
+      migrateRow.appendChild(label);
+
+      const btnGroup = document.createElement("div");
+      btnGroup.style.cssText = "display:flex; gap:10px;";
+
+      const toFileBtn = createMigrateBtn(
+        mode, true, false,
+        "DataStore \u2192 File",
+        "Migrated " + modeLabels[mode] + " to file! File Cache must be enabled to use it."
+      );
+      btnGroup.appendChild(toFileBtn);
+
+      const toStoreBtn = createMigrateBtn(
+        mode, false, true,
+        "File \u2192 DataStore",
+        "Migrated " + modeLabels[mode] + " file to DataStore. You can now disable File Cache."
+      );
+      btnGroup.appendChild(toStoreBtn);
+
+      migrateRow.appendChild(btnGroup);
+
+      root.appendChild(migrateRow);
+    }
   }
 
   // Global Champion Data section
@@ -777,8 +803,10 @@ export function renderSettingsTab(callbacks = {}) {
   clearGlobalBtn.onclick = () => {
     try {
       const { clearAllGlobalData } = window.__mdCacheRef || {};
-      const had = clearAllGlobalData ? clearAllGlobalData() : false;
-      clearGlobalBtn.textContent = had ? "Cleared!" : "Nothing to clear";
+      const hadOfficial = clearAllGlobalData ? clearAllGlobalData(Mode.OFFICIAL) : false;
+      const hadClassic = clearAllGlobalData ? clearAllGlobalData(Mode.CLASSIC) : false;
+      const had = hadOfficial || hadClassic;
+      clearGlobalBtn.textContent = had ? "Cleared both!" : "Nothing to clear";
       clearGlobalBtn.disabled = true;
       window.dispatchEvent(new Event("md-cache-reloaded"));
       setTimeout(() => {
@@ -828,8 +856,10 @@ export function renderSettingsTab(callbacks = {}) {
   clearBtn.onclick = () => {
     try {
       const { clearAllCache } = window.__mdCacheRef || {};
-      const count = clearAllCache ? clearAllCache() : 0;
-      clearBtn.textContent = `Cleared (${count} player${count !== 1 ? "s" : ""})`;
+      const countOfficial = clearAllCache ? clearAllCache(Mode.OFFICIAL) : 0;
+      const countClassic = clearAllCache ? clearAllCache(Mode.CLASSIC) : 0;
+      const total = countOfficial + countClassic;
+      clearBtn.textContent = total > 0 ? `Cleared (${total} player${total !== 1 ? "s" : ""})` : "Nothing to clear";
       clearBtn.disabled = true;
       setTimeout(() => {
         clearBtn.textContent = "Clear Cache";
@@ -922,7 +952,7 @@ export function renderSettingsTab(callbacks = {}) {
       const banner = document.createElement("div");
       banner.className = "md-update-banner";
       banner.innerHTML = `
-                <span class="md-update-banner-text">Update available — v${_latestRelease.version.join(".")}</span>
+                <span class="md-update-banner-text">Update available - v${_latestRelease.version.join(".")}</span>
                 <a class="aram-btn-start md-update-link" href="${_latestRelease.url}" target="_blank">View release</a>
             `;
       updateStatusEl.appendChild(banner);
@@ -965,6 +995,21 @@ export function renderSettingsTab(callbacks = {}) {
   checkRow.appendChild(checkBtn);
   checkRow.appendChild(checkStatus);
   root.appendChild(checkRow);
+
+  // Developer section
+  const devTitle = document.createElement("h3");
+  devTitle.className = "md-settings-section-title";
+  devTitle.textContent = "Developer";
+  root.appendChild(devTitle);
+
+  root.appendChild(
+    makeToggle(
+      "Enable debug logs",
+      "Logs detailed Mayhem Doctor debug info to the browser console. Disable unless troubleshooting.",
+      "debugLogs",
+      (enabled) => Utils.Debug.setEnabled(enabled),
+    ),
+  );
 
   return root;
 }

@@ -1,3 +1,5 @@
+import { getValidQueueIds, Mode } from './mode.js';
+
 /**
  * All plugin-wide constants & Settings
  */
@@ -5,8 +7,11 @@
 // Feature Toggles
 export const ENABLE_GLOBAL_CRAWL = true; // Set to false to hide all crawl UI/logic
 
-// Queue IDs considered valid for analysis (Mayhem = 2400; Normal ARAM = 450 is excluded for now)
-export const VALID_QUEUE_IDS    = [2400];
+const _allQueues = new Set([
+    ...getValidQueueIds(Mode.OFFICIAL),
+    ...getValidQueueIds(Mode.CLASSIC),
+]);
+export const VALID_QUEUE_IDS = [..._allQueues];
 
 export const SETTINGS = {
     synergyWeight: 0.3
@@ -41,7 +46,7 @@ export const BLACKLIST_ITEM_IDS = new Set([
     3051, 3057, 3066, 3067, 3070, 3076, 3077, 3082, 3086, 3098, 3105, 3108, 3113, 3114, 3123, 3133, 
     3134, 3140, 3144, 3145, 3147, 3155, 3191, 3211, 3801, 3802, 3803, 3916, 4003, 4630, 4632, 4638, 4642, 6660, 6670, 6690,
     
-    // Boots — all tiers and ARAM variants
+    // Boots - all tiers and ARAM variants
     3005, 3006, 3009, 3010, 3017, 3020, 3047, 3111, 3117, 3158, 4001,
     3008, 3013, 3168, 3170, 3171, 3173, 3174, 3175, 3176, 1111,
     223005, 223006, 223008, 223009, 223020, 223047, 223111, 223158,
@@ -51,7 +56,7 @@ export const BLACKLIST_ITEM_IDS = new Set([
 ]);
 
 // Known completed boot item IDs.
-// This hardcoded set is the reliable seed — loadStaticData in lcu.js augments it
+// This hardcoded set is the reliable seed - loadStaticData in lcu.js augments it
 // dynamically so new boots added by Riot are picked up without a code change.
 export const BOOT_IDS = new Set([
     // Standard T2 boots
@@ -76,6 +81,27 @@ export const BOOT_IDS = new Set([
     2422,  // Slightly Magical Footwear
 ]);
 
+// SGP server endpoints keyed by region code
+export const SGP_MAP = {
+    TW2:  'https://apse1-red.pp.sgp.pvp.net',
+    SG2:  'https://apse1-red.pp.sgp.pvp.net',
+    PH2:  'https://apse1-red.pp.sgp.pvp.net',
+    VN2:  'https://apse1-red.pp.sgp.pvp.net',
+    TH2:  'https://apse1-red.pp.sgp.pvp.net',
+    JP1:  'https://apne1-red.pp.sgp.pvp.net',
+    KR:   'https://apne1-red.pp.sgp.pvp.net',
+    EUW1: 'https://euc1-red.pp.sgp.pvp.net',
+    EUN1: 'https://euc1-red.pp.sgp.pvp.net',
+    RU:   'https://euc1-red.pp.sgp.pvp.net',
+    TR1:  'https://euc1-red.pp.sgp.pvp.net',
+    NA1:  'https://usw2-red.pp.sgp.pvp.net',
+    BR1:  'https://usw2-red.pp.sgp.pvp.net',
+    LA1:  'https://usw2-red.pp.sgp.pvp.net',
+    LA2:  'https://usw2-red.pp.sgp.pvp.net',
+    OC1:  'https://apse1-red.pp.sgp.pvp.net',
+    PBE1: 'https://usw2-red.pp.sgp.pvp.net',
+};
+
 // Cache limits
 export const MAX_CACHED_PUUIDS   = 10;
 export const MAX_BYTES_PER_PUUID = 6  * 1024 * 1024; // 6 MB per player aka puuid
@@ -83,10 +109,10 @@ export const MAX_TOTAL_BYTES     = 60 * 1024 * 1024; // 60 MB total
 
 // Global crawl tuning
 export const CRAWL_TARGET_GAMES    = 10_000; // stop when this many unique games collected
-export const CRAWL_MAX_PLAYERS     = 600;    // hard cap on players visited
+export const CRAWL_MAX_PLAYERS     = 1000;    // hard cap on players visited
 export const CRAWL_BATCH_SIZE      = 20;     // games fetched per player
 export const CRAWL_MAX_CONCURRENT  = 2;      // parallel SGP requests
-export const CRAWL_DELAY_MS        = 75;     // ms between individual requests
+export const CRAWL_DELAY_MS        = 650;     // ms between individual requests
 export const CRAWL_SAVE_EVERY      = 10;     // players between Store state saves
 // Cap for in-memory processed game dedupe set. Prune when exceeded.
 export const PROCESSED_GAME_IDS_MAX = 200000; // keep up to 100k game IDs in memory

@@ -1,6 +1,6 @@
 /**
  * @name Snooze-GeneralUtils
- * @version 1.0.0
+ * @version 1.0.1
  * @author SnoozeFest - github@ReformedDoge
  * @description Shared helper utilities used by Snooze modules.
  * @link https://github.com/ReformedDoge
@@ -8,14 +8,31 @@
 
 // Debug is exposed via Utils (Utils.Debug)
 
-const _debugState = { enabled: false };
-function setDebugEnabled(v) { _debugState.enabled = !!v; }
+const _debugState = {
+    enabled: false
+};
+
+function setDebugEnabled(v) {
+    _debugState.enabled = !!v;
+}
 const Debug = {
-  setEnabled: setDebugEnabled,
-  log(...args) { if (!_debugState.enabled) return; console.log(...args); },
-  info(...args) { if (!_debugState.enabled) return; console.info(...args); },
-  warn(...args) { if (!_debugState.enabled) return; console.warn(...args); },
-  error(...args) { if (!_debugState.enabled) return; console.error(...args); }
+    setEnabled: setDebugEnabled,
+    log(...args) {
+        if (!_debugState.enabled) return;
+        console.log(...args);
+    },
+    info(...args) {
+        if (!_debugState.enabled) return;
+        console.info(...args);
+    },
+    warn(...args) {
+        if (!_debugState.enabled) return;
+        console.warn(...args);
+    },
+    error(...args) {
+        if (!_debugState.enabled) return;
+        console.error(...args);
+    }
 };
 
 const Toast = {
@@ -78,21 +95,26 @@ const Toast = {
         const container = this._ensureContainer();
         const toast = document.createElement('div');
         toast.className = 'snooze-toast';
-        
+
         // Colors match Snooze styling
         const color = type === 'success' ? '#0ac8b9' : (type === 'error' ? '#e84057' : '#c8aa6e');
         toast.style.borderLeftColor = color;
 
         // Custom SVGs based on type
-        const iconSvg = type === 'success' 
-            ? `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>`
-            : `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>`;
+        const iconSvg = type === 'success' ?
+            `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>` :
+            `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>`;
 
-        toast.innerHTML = `
-            <div style="display:flex;align-items:center;justify-content:center;">${iconSvg}</div>
-            <div style="font-weight:500;line-height:1.4;">${message}</div>
-        `;
+        const icon = document.createElement('div');
+        icon.style.cssText = 'display:flex;align-items:center;justify-content:center;';
+        icon.innerHTML = iconSvg;
 
+        const messageElement = document.createElement('div');
+        messageElement.style.cssText = 'font-weight:500;line-height:1.4;';
+        messageElement.textContent = String(message);
+
+        toast.appendChild(icon);
+        toast.appendChild(messageElement);
         container.appendChild(toast);
 
         setTimeout(() => {
@@ -101,9 +123,15 @@ const Toast = {
         }, duration);
     },
 
-    success(message, duration) { this.show(message, 'success', duration); },
-    error(message, duration)   { this.show(message, 'error', duration); },
-    info(message, duration)    { this.show(message, 'info', duration); }
+    success(message, duration) {
+        this.show(message, 'success', duration);
+    },
+    error(message, duration) {
+        this.show(message, 'error', duration);
+    },
+    info(message, duration) {
+        this.show(message, 'info', duration);
+    }
 };
 
 /**
@@ -112,7 +140,7 @@ const Toast = {
  * - Deduplicates elements (runs once per element)
  * - Batches mutations using requestAnimationFrame
  */
- 
+
 function createSmartObserver(root = document.documentElement) {
     const registry = new Map(); // selector -> Set<{ callback, seen }>
     let scheduled = false;
@@ -165,7 +193,10 @@ function createSmartObserver(root = document.documentElement) {
         if (registry.size === 0) return;
         for (const [selector, entries] of registry.entries()) {
             for (const entry of entries) {
-                const { callback, seen } = entry;
+                const {
+                    callback,
+                    seen
+                } = entry;
 
                 // Direct match
                 if (node.matches?.(selector) && !seen.has(node)) {
@@ -190,7 +221,7 @@ function createSmartObserver(root = document.documentElement) {
         try {
             cb(el);
         } catch (e) {
-          Debug.error("SmartObserver error:", e);
+            Debug.error("SmartObserver error:", e);
         }
     }
 
@@ -240,296 +271,304 @@ const observer = createSmartObserver();
  */
 
 const EmberHook = window.__SM_EmberHook || (window.__SM_EmberHook = {
-  _rules: [],
-  _installed: false,
-  _wrappedMark: Symbol('SnoozeEmberWrapped'),
-  _appliedRulesKey: '__snoozeAppliedRules',
-  _retroKey: '__sm_retro_applied',
+    _rules: [],
+    _installed: false,
+    _wrappedMark: Symbol('SnoozeEmberWrapped'),
+    _appliedRulesKey: '__snoozeAppliedRules',
+    _retroKey: '__sm_retro_applied',
 
-  install(context) {
-    if (this._installed) {
-      Debug.warn('[EmberHook] Already installed');
-      return;
-    }
-    this._installed = true;
-
-    // Try sync Ember first (eager modules), fall back to async Promise (lazy modules).
-    context.rcp.postInit('rcp-fe-ember-libs', (api) => {
-      const emberLibs = api;
-      if (!emberLibs || typeof emberLibs.getEmber !== 'function') {
-        Debug.warn('[EmberHook] rcp-fe-ember-libs has no getEmber');
-        return;
-      }
-
-      const hookEmber = (Ember) => {
-        if (!Ember || !Ember.Component) return;
-        if (!emberLibs[this._wrappedMark]) {
-          try {
-            this._hookComponentExtend(Ember);
-            this._hookServiceExtend(Ember);
-            Debug.log('[EmberHook] hooks installed');
-          } catch (e) {
-            Debug.warn('[EmberHook] hook error:', e);
-          }
-          emberLibs[this._wrappedMark] = true;
+    install(context) {
+        if (this._installed) {
+            Debug.warn('[EmberHook] Already installed');
+            return;
         }
-      };
+        this._installed = true;
 
-      // Sync path. catches eagerly-loaded component extends
-      const Ember = this._findEmberSync(emberLibs);
-      if (Ember) {
-        hookEmber(Ember);
-      }
+        // Try sync Ember first (eager modules), fall back to async Promise (lazy modules).
+        context.rcp.postInit('rcp-fe-ember-libs', (api) => {
+            const emberLibs = api;
+            if (!emberLibs || typeof emberLibs.getEmber !== 'function') {
+                Debug.warn('[EmberHook] rcp-fe-ember-libs has no getEmber');
+                return;
+            }
 
-      // Async fallback. catches lazily-loaded components
-      Promise.resolve(emberLibs.getEmber()).then(Ember => hookEmber(Ember));
-    }, true);
-  },
-
-  _findEmberSync(emberLibs) {
-    if (window.Ember && typeof window.Ember.Component?.extend === 'function' &&
-        typeof window.Ember.Service?.extend === 'function') {
-      return window.Ember;
-    }
-
-    for (const key of Object.getOwnPropertyNames(emberLibs)) {
-      const val = emberLibs[key];
-      if (val && val !== emberLibs.getEmber &&
-          typeof val.Component?.extend === 'function' &&
-          typeof val.Service?.extend === 'function') {
-        return val;
-      }
-    }
-
-    try {
-      const wpr = window.__webpack_require__;
-      if (wpr?.c) {
-        for (const id in wpr.c) {
-          const mod = wpr.c[id];
-          if (mod.exports &&
-              typeof mod.exports.Component?.extend === 'function' &&
-              typeof mod.exports.Service?.extend === 'function') {
-            return mod.exports;
-          }
-        }
-      }
-    } catch (e) {}
-
-    return null;
-  },
-
-  _wrapMethod(target, name, replacement) {
-    const fn = target[name];
-    if (typeof fn !== 'function') return false;
-
-    const wrappedSet = (target[this._wrappedMark] ??= new Set());
-    if (wrappedSet.has(name)) return false;
-
-    const original = fn;
-    target[name] = function(...args) {
-      const caller = (...callArgs) => original.apply(this, callArgs);
-      return replacement.call(this, caller, args);
-    };
-
-    wrappedSet.add(name);
-    return true;
-  },
-
-  _extractClassNames(args) {
-    const collected = [];
-    for (const a of args) {
-      if (a && typeof a === 'object') {
-        const cn = a.classNames;
-        if (Array.isArray(cn)) {
-          for (const c of cn) {
-            if (typeof c === 'string') collected.push(c);
-          }
-        }
-      }
-    }
-    return collected;
-  },
-
-  _applyRuleToClass(Ember, klass, extendArgs, rule) {
-    let cur = klass;
-
-    if (rule.mixin) {
-      try {
-        let mixinObj = rule.mixin(Ember, extendArgs);
-        // Runtime componentName filter: wrap init so only matching instances
-        // (by _debugContainerKey) execute the hook code.
-        if (rule.componentName && mixinObj && mixinObj.init) {
-          mixinObj.init = this._wrapInitWithNameCheck(mixinObj.init, rule.componentName);
-        }
-        cur = cur.extend(mixinObj);
-      } catch (e) {
-        Debug.warn('[EmberHook] mixin failed:', rule.name, e);
-      }
-    }
-
-    if (rule.wraps?.length) {
-      try {
-        const proto = cur.proto();
-
-        const applied = (proto[this._appliedRulesKey] ??= new Set());
-        if (!applied.has(rule.name)) {
-          for (const w of rule.wraps) {
-            this._wrapMethod(proto, w.name, w.replacement);
-          }
-          applied.add(rule.name);
-          proto[this._appliedRulesKey] = applied;
-        }
-      } catch (e) {
-        Debug.warn('[EmberHook] wraps failed:', rule.name, e);
-      }
-    }
-
-    const hookList = rule.hookMethods || (rule.hookMethod ? [rule.hookMethod] : []);
-    if (hookList.length) {
-      try {
-        const proto = cur.proto();
-        const applied = (proto[this._appliedRulesKey] ??= new Set());
-        if (!applied.has(rule.name)) {
-          for (const hm of hookList) {
-            const original = proto[hm.name];
-            proto[hm.name] = function(...args) {
-              const proxyOriginal = (...callArgs) => {
-                if (typeof original === 'function') return original.apply(this, callArgs);
-              };
-              return hm.callback.call(this, Ember, proxyOriginal, ...args);
+            const hookEmber = (Ember) => {
+                if (!Ember || !Ember.Component) return;
+                if (!emberLibs[this._wrappedMark]) {
+                    try {
+                        this._hookComponentExtend(Ember);
+                        this._hookServiceExtend(Ember);
+                        Debug.log('[EmberHook] hooks installed');
+                    } catch (e) {
+                        Debug.warn('[EmberHook] hook error:', e);
+                    }
+                    emberLibs[this._wrappedMark] = true;
+                }
             };
-          }
-          applied.add(rule.name);
-          proto[this._appliedRulesKey] = applied;
+
+            // Sync path. catches eagerly-loaded component extends
+            const Ember = this._findEmberSync(emberLibs);
+            if (Ember) {
+                hookEmber(Ember);
+            }
+
+            // Async fallback. catches lazily-loaded components
+            Promise.resolve(emberLibs.getEmber()).then(Ember => hookEmber(Ember));
+        }, true);
+    },
+
+    _findEmberSync(emberLibs) {
+        if (window.Ember && typeof window.Ember.Component?.extend === 'function' &&
+            typeof window.Ember.Service?.extend === 'function') {
+            return window.Ember;
         }
-      } catch (e) {
-        Debug.warn('[EmberHook] hookMethods failed:', rule.name, e);
-      }
-    }
 
-    return cur;
-  },
-
-  _hookComponentExtend(Ember) {
-    const Component = Ember.Component;
-    if (!Component || typeof Component.extend !== 'function') {
-      Debug.warn('[EmberHook] Ember.Component.extend not found');
-      return;
-    }
-
-    const target = Component;
-    if (target[this._wrappedMark]) {
-      return;
-    }
-
-    const originalExtend = Component.extend.bind(Component);
-    Component.extend = function(...args) {
-      let klass = originalExtend(...args);
-
-      if (this._rules.length > 0) {
-        for (const rule of this._rules) {
-          if (rule.type === 'service' || rule.enabled === false) continue;
-          const m = rule.matcher;
-          let matched = false;
-
-          if (typeof m === 'function') {
-            try { matched = m(args); } catch(e) { matched = false; }
-          } else if (m === '*') {
-            matched = true;
-          } else {
-            const classNames = this._extractClassNames(args);
-            matched = classNames.includes(m);
-          }
-
-          if (matched) {
-            klass = this._applyRuleToClass(Ember, klass, args, rule);
-          }
+        for (const key of Object.getOwnPropertyNames(emberLibs)) {
+            const val = emberLibs[key];
+            if (val && val !== emberLibs.getEmber &&
+                typeof val.Component?.extend === 'function' &&
+                typeof val.Service?.extend === 'function') {
+                return val;
+            }
         }
-        if (klass) klass[this._retroKey] = true;
-      }
 
-      return klass;
-    }.bind(this);
+        try {
+            const wpr = window.__webpack_require__;
+            if (wpr?.c) {
+                for (const id in wpr.c) {
+                    const mod = wpr.c[id];
+                    if (mod.exports &&
+                        typeof mod.exports.Component?.extend === 'function' &&
+                        typeof mod.exports.Service?.extend === 'function') {
+                        return mod.exports;
+                    }
+                }
+            }
+        } catch (e) {}
 
-    target[this._wrappedMark] = true;
-  },
+        return null;
+    },
 
-  // Wraps init with runtime _debugContainerKey check; non-matching instances fall through to _super.
-  _wrapInitWithNameCheck(initFn, componentName) {
-    return function(...args) {
-      const debugKey = this._debugContainerKey;
-      let matchName = null;
-      if (debugKey) {
-        const afterColon = debugKey.split(':')[1];
-        if (afterColon) matchName = afterColon.split('@')[0];
-      }
-      if (matchName && matchName !== componentName) {
-        // Non-matching: just call _super (source init) without the hook code
-        if (typeof this._super === 'function') {
-          return this._super(...args);
+    _wrapMethod(target, name, replacement) {
+        const fn = target[name];
+        if (typeof fn !== 'function') return false;
+
+        const wrappedSet = (target[this._wrappedMark] ??= new Set());
+        if (wrappedSet.has(name)) return false;
+
+        const original = fn;
+        target[name] = function(...args) {
+            const caller = (...callArgs) => original.apply(this, callArgs);
+            return replacement.call(this, caller, args);
+        };
+
+        wrappedSet.add(name);
+        return true;
+    },
+
+    _extractClassNames(args) {
+        const collected = [];
+        for (const a of args) {
+            if (a && typeof a === 'object') {
+                const cn = a.classNames;
+                if (Array.isArray(cn)) {
+                    for (const c of cn) {
+                        if (typeof c === 'string') collected.push(c);
+                    }
+                }
+            }
         }
-        return;
-      }
-      return initFn.apply(this, args);
-    };
-  },
+        return collected;
+    },
 
-  _hookServiceExtend(Ember) {
-    const Service = Ember.Service;
-    if (!Service || typeof Service.extend !== 'function') return;
+    _applyRuleToClass(Ember, klass, extendArgs, rule) {
+        let cur = klass;
 
-    const target = Service;
-    if (target[this._wrappedMark]) return;
-
-    const originalExtend = Service.extend.bind(Service);
-    Service.extend = function(...args) {
-      let klass = originalExtend(...args);
-
-      if (this._rules.length > 0) {
-        for (const rule of this._rules) {
-          if (rule.type !== 'service' || rule.enabled === false) continue;
-          const m = rule.matcher;
-          let matched = false;
-
-          if (typeof m === 'function') {
-            try { matched = m(args); } catch(e) { matched = false; }
-          } else if (m === '*') {
-            matched = true;
-          } else {
-            const classNames = this._extractClassNames(args);
-            matched = classNames.includes(m);
-          }
-
-          if (matched) {
-            klass = this._applyRuleToClass(Ember, klass, args, rule);
-          }
+        if (rule.mixin) {
+            try {
+                let mixinObj = rule.mixin(Ember, extendArgs);
+                // Runtime componentName filter: wrap init so only matching instances
+                // (by _debugContainerKey) execute the hook code.
+                if (rule.componentName && mixinObj && mixinObj.init) {
+                    mixinObj.init = this._wrapInitWithNameCheck(mixinObj.init, rule.componentName);
+                }
+                cur = cur.extend(mixinObj);
+            } catch (e) {
+                Debug.warn('[EmberHook] mixin failed:', rule.name, e);
+            }
         }
-        if (klass) klass[this._retroKey] = true;
-      }
 
-      return klass;
-    }.bind(this);
+        if (rule.wraps?.length) {
+            try {
+                const proto = cur.proto();
 
-    target[this._wrappedMark] = true;
-  },
+                const applied = (proto[this._appliedRulesKey] ??= new Set());
+                if (!applied.has(rule.name)) {
+                    for (const w of rule.wraps) {
+                        this._wrapMethod(proto, w.name, w.replacement);
+                    }
+                    applied.add(rule.name);
+                    proto[this._appliedRulesKey] = applied;
+                }
+            } catch (e) {
+                Debug.warn('[EmberHook] wraps failed:', rule.name, e);
+            }
+        }
 
-  registerRule(rule) {
-    if (rule.enabled === undefined) rule.enabled = true;
-    const i = this._rules.findIndex(r => r.name === rule.name);
-    if (i >= 0) {
-      this._rules[i] = rule;
-    } else {
-      this._rules.push(rule);
-    }
-    return () => {
-      const idx = this._rules.indexOf(rule);
-      if (idx >= 0) this._rules.splice(idx, 1);
-    };
-  },
+        const hookList = rule.hookMethods || (rule.hookMethod ? [rule.hookMethod] : []);
+        if (hookList.length) {
+            try {
+                const proto = cur.proto();
+                const applied = (proto[this._appliedRulesKey] ??= new Set());
+                if (!applied.has(rule.name)) {
+                    for (const hm of hookList) {
+                        const original = proto[hm.name];
+                        proto[hm.name] = function(...args) {
+                            const proxyOriginal = (...callArgs) => {
+                                if (typeof original === 'function') return original.apply(this, callArgs);
+                            };
+                            return hm.callback.call(this, Ember, proxyOriginal, ...args);
+                        };
+                    }
+                    applied.add(rule.name);
+                    proto[this._appliedRulesKey] = applied;
+                }
+            } catch (e) {
+                Debug.warn('[EmberHook] hookMethods failed:', rule.name, e);
+            }
+        }
 
-  getRulesCount() {
-    return this._rules.length;
-  },
+        return cur;
+    },
+
+    _hookComponentExtend(Ember) {
+        const Component = Ember.Component;
+        if (!Component || typeof Component.extend !== 'function') {
+            Debug.warn('[EmberHook] Ember.Component.extend not found');
+            return;
+        }
+
+        const target = Component;
+        if (target[this._wrappedMark]) {
+            return;
+        }
+
+        const originalExtend = Component.extend.bind(Component);
+        Component.extend = function(...args) {
+            let klass = originalExtend(...args);
+
+            if (this._rules.length > 0) {
+                for (const rule of this._rules) {
+                    if (rule.type === 'service' || rule.enabled === false) continue;
+                    const m = rule.matcher;
+                    let matched = false;
+
+                    if (typeof m === 'function') {
+                        try {
+                            matched = m(args);
+                        } catch (e) {
+                            matched = false;
+                        }
+                    } else if (m === '*') {
+                        matched = true;
+                    } else {
+                        const classNames = this._extractClassNames(args);
+                        matched = classNames.includes(m);
+                    }
+
+                    if (matched) {
+                        klass = this._applyRuleToClass(Ember, klass, args, rule);
+                    }
+                }
+                if (klass) klass[this._retroKey] = true;
+            }
+
+            return klass;
+        }.bind(this);
+
+        target[this._wrappedMark] = true;
+    },
+
+    // Wraps init with runtime _debugContainerKey check; non-matching instances fall through to _super.
+    _wrapInitWithNameCheck(initFn, componentName) {
+        return function(...args) {
+            const debugKey = this._debugContainerKey;
+            let matchName = null;
+            if (debugKey) {
+                const afterColon = debugKey.split(':')[1];
+                if (afterColon) matchName = afterColon.split('@')[0];
+            }
+            if (matchName && matchName !== componentName) {
+                // Non-matching: just call _super (source init) without the hook code
+                if (typeof this._super === 'function') {
+                    return this._super(...args);
+                }
+                return;
+            }
+            return initFn.apply(this, args);
+        };
+    },
+
+    _hookServiceExtend(Ember) {
+        const Service = Ember.Service;
+        if (!Service || typeof Service.extend !== 'function') return;
+
+        const target = Service;
+        if (target[this._wrappedMark]) return;
+
+        const originalExtend = Service.extend.bind(Service);
+        Service.extend = function(...args) {
+            let klass = originalExtend(...args);
+
+            if (this._rules.length > 0) {
+                for (const rule of this._rules) {
+                    if (rule.type !== 'service' || rule.enabled === false) continue;
+                    const m = rule.matcher;
+                    let matched = false;
+
+                    if (typeof m === 'function') {
+                        try {
+                            matched = m(args);
+                        } catch (e) {
+                            matched = false;
+                        }
+                    } else if (m === '*') {
+                        matched = true;
+                    } else {
+                        const classNames = this._extractClassNames(args);
+                        matched = classNames.includes(m);
+                    }
+
+                    if (matched) {
+                        klass = this._applyRuleToClass(Ember, klass, args, rule);
+                    }
+                }
+                if (klass) klass[this._retroKey] = true;
+            }
+
+            return klass;
+        }.bind(this);
+
+        target[this._wrappedMark] = true;
+    },
+
+    registerRule(rule) {
+        if (rule.enabled === undefined) rule.enabled = true;
+        const i = this._rules.findIndex(r => r.name === rule.name);
+        if (i >= 0) {
+            this._rules[i] = rule;
+        } else {
+            this._rules.push(rule);
+        }
+        return () => {
+            const idx = this._rules.indexOf(rule);
+            if (idx >= 0) this._rules.splice(idx, 1);
+        };
+    },
+
+    getRulesCount() {
+        return this._rules.length;
+    },
 });
 
 
@@ -541,251 +580,343 @@ function serializeBody(body) {
     return typeof body === 'string' ? body : JSON.stringify(body);
 }
 
-// LCU
-const LCU = {
-  _ctx: null,
-  _listeners: new Map(),
-  _uris: new Set(),
-  _subscribed: new Set(),
-  _subscriptions: new Map(),
-
-  bind(ctx) {
-    if (this._ctx && this._ctx !== ctx) {
-      this._subscriptions.forEach((_, uri) => this._disconnectUri(uri));
-      this._subscribed.clear();
-      this._subscriptions.clear();
+class LCURequestError extends Error {
+    constructor(method, url, message, details = {}) {
+        super(`[LCU] ${method} ${url}: ${message}`);
+        this.name = 'LCURequestError';
+        this.method = method;
+        this.url = url;
+        this.status = details.status ?? null;
+        this.statusText = details.statusText ?? '';
+        this.responseBody = details.responseBody ?? null;
+        if (details.cause) this.cause = details.cause;
     }
-    this._ctx = ctx;
-    window.LCU = this;
-    Debug.log('[LCU] bindContext');
-    this._uris.forEach(u => this._subscribe(u));
-  },
+}
 
-  async get(url) {
-    const r = await fetch(url.startsWith('/') ? url : '/' + url);
-    if (!r.ok) throw new Error(r.status);
-    const t = await r.text();
-    return t ? JSON.parse(t) : null;
-  },
+function normalizeLCUUrl(url) {
+    if (typeof url !== 'string' || url.length === 0) {
+        throw new TypeError('[LCU] Request URL must be a non-empty string');
+    }
+    return url.startsWith('/') ? url : '/' + url;
+}
 
-  async post(url, body, options = {}) {
-      const {
-          headers = {},
-          raw = false
-      } = options;
-
-      const finalHeaders = raw
-           ? headers
-           : {
-          'Content-Type': 'application/json',
-          ...headers
-      };
-
-      const r = await fetch(url.startsWith('/') ? url : '/' + url, {
-          method: 'POST',
-          headers: finalHeaders,
-          body: raw ? body : serializeBody(body)
-      });
-
-    if (!r.ok) throw new Error(r.status);
-
-    const t = await r.text();
-    return t ? JSON.parse(t) : null;
-	},
-
-  async put(url, body) {
-    const r = await fetch(url.startsWith('/') ? url : '/' + url, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: serializeBody(body)
-    });
-    if (!r.ok) throw new Error(r.status);
-    const t = await r.text();
-    return t ? JSON.parse(t) : null;
-  },
-
-  async patch(url, body) {
-    const r = await fetch(url.startsWith('/') ? url : '/' + url, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: serializeBody(body)
-    });
-    if (!r.ok) throw new Error(r.status);
-    const t = await r.text();
-    return t ? JSON.parse(t) : null;
-  },
-
-  observe(uri, cb) {
-    if (!this._listeners.has(uri)) this._listeners.set(uri, new Set());
-    this._listeners.get(uri).add(cb);
-    this._uris.add(uri);
-    if (this._ctx?.socket) this._subscribe(uri);
-    return () => {
-      const listeners = this._listeners.get(uri);
-      if (!listeners) return;
-      listeners.delete(cb);
-      if (listeners.size === 0) {
-        this._listeners.delete(uri);
-        this._uris.delete(uri);
-        this._disconnectUri(uri);
-      }
-    };
-  },
-
-  _subscribe(uri) {
-    if (!this._ctx?.socket) return;
-    if (this._subscribed.has(uri)) return;
-    this._subscribed.add(uri);
-    const ctx = this._ctx;
-    const listener = (data) => {
-      if (this._ctx !== ctx) return;
-      (this._listeners.get(uri) || []).forEach(cb => cb(data));
-    };
-    const subscription = ctx.socket.observe(uri, listener);
-    this._subscriptions.set(uri, { ctx, listener, subscription });
-  },
-
-  _disconnectUri(uri) {
-    const sub = this._subscriptions.get(uri);
-    if (!sub) return;
+async function requestLCU(method, url, options = {}) {
+    const normalizedUrl = normalizeLCUUrl(url);
+    let response;
 
     try {
-      if (sub.subscription && typeof sub.subscription.disconnect === 'function') {
-        sub.subscription.disconnect();
-      } else if (typeof sub.subscription === 'function') {
-        sub.subscription();
-      } else if (sub.ctx?.socket?.disconnect) {
-        sub.ctx.socket.disconnect(uri, sub.listener);
-      }
-    } catch (e) {}
+        response = await fetch(normalizedUrl, {
+            method,
+            headers: options.headers,
+            body: options.body
+        });
+    } catch (cause) {
+        throw new LCURequestError(method, normalizedUrl, cause?.message || 'request failed before receiving a response', {
+            cause
+        });
+    }
 
-    this._subscriptions.delete(uri);
-    this._subscribed.delete(uri);
-  },
+    let responseText = '';
+    try {
+        responseText = await response.text();
+    } catch (cause) {
+        throw new LCURequestError(method, normalizedUrl, 'failed to read response body', {
+            status: response.status,
+            statusText: response.statusText,
+            cause
+        });
+    }
 
-  async delete(url) {
-    const r = await fetch(url.startsWith('/') ? url : '/' + url, { method: 'DELETE' });
-    if (!r.ok) throw new Error(r.status);
-    const t = await r.text();
-    return t ? JSON.parse(t) : null;
-  }
+    if (!response.ok) {
+        const summary = responseText.trim().slice(0, 300);
+        const status = `${response.status}${response.statusText ? ` ${response.statusText}` : ''}`;
+        throw new LCURequestError(method, normalizedUrl, summary ? `${status} - ${summary}` : status, {
+            status: response.status,
+            statusText: response.statusText,
+            responseBody: responseText
+        });
+    }
+
+    if (!responseText) return null;
+    try {
+        return JSON.parse(responseText);
+    } catch {
+        return responseText;
+    }
+}
+
+// LCU
+const LCU = {
+    _ctx: null,
+    _listeners: new Map(),
+    _uris: new Set(),
+    _subscribed: new Set(),
+    _subscriptions: new Map(),
+
+    bind(ctx) {
+        if (this._ctx && this._ctx !== ctx) {
+            this._subscriptions.forEach((_, uri) => this._disconnectUri(uri));
+            this._subscribed.clear();
+            this._subscriptions.clear();
+        }
+        this._ctx = ctx;
+        window.LCU = this;
+        Debug.log('[LCU] bindContext');
+        this._uris.forEach(u => this._subscribe(u));
+    },
+
+    unbind() {
+        for (const uri of [...this._subscriptions.keys()]) {
+            this._disconnectUri(uri);
+        }
+        this._listeners.clear();
+        this._uris.clear();
+        this._subscribed.clear();
+        this._subscriptions.clear();
+        this._ctx = null;
+        if (window.LCU === this) delete window.LCU;
+    },
+
+    async get(url) {
+        return requestLCU('GET', url);
+    },
+
+    async post(url, body, options = {}) {
+        const {
+            headers = {},
+                raw = false
+        } = options;
+
+        const finalHeaders = raw ?
+            headers :
+            {
+                'Content-Type': 'application/json',
+                ...headers
+            };
+
+        return requestLCU('POST', url, {
+            headers: finalHeaders,
+            body: raw ? body : serializeBody(body)
+        });
+    },
+
+    async put(url, body) {
+        return requestLCU('PUT', url, {
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: serializeBody(body)
+        });
+    },
+
+    async patch(url, body) {
+        return requestLCU('PATCH', url, {
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: serializeBody(body)
+        });
+    },
+
+    observe(uri, cb) {
+        if (!this._listeners.has(uri)) this._listeners.set(uri, new Set());
+        this._listeners.get(uri).add(cb);
+        this._uris.add(uri);
+        if (this._ctx?.socket) this._subscribe(uri);
+        return () => {
+            const listeners = this._listeners.get(uri);
+            if (!listeners) return;
+            listeners.delete(cb);
+            if (listeners.size === 0) {
+                this._listeners.delete(uri);
+                this._uris.delete(uri);
+                this._disconnectUri(uri);
+            }
+        };
+    },
+
+    _subscribe(uri) {
+        if (!this._ctx?.socket) return;
+        if (this._subscribed.has(uri)) return;
+        this._subscribed.add(uri);
+        const ctx = this._ctx;
+        const listener = (data) => {
+            if (this._ctx !== ctx) return;
+            for (const callback of this._listeners.get(uri) || []) {
+                try {
+                    const result = callback(data);
+                    if (result && typeof result.catch === 'function') {
+                        result.catch(error => Debug.error(`[LCU] Observer callback rejected for ${uri}:`, error));
+                    }
+                } catch (error) {
+                    Debug.error(`[LCU] Observer callback failed for ${uri}:`, error);
+                }
+            }
+        };
+        let subscription;
+        try {
+            subscription = ctx.socket.observe(uri, listener);
+        } catch (error) {
+            this._subscribed.delete(uri);
+            Debug.error(`[LCU] Failed to subscribe to ${uri}:`, error);
+            return;
+        }
+        this._subscriptions.set(uri, {
+            ctx,
+            listener,
+            subscription
+        });
+    },
+
+    _disconnectUri(uri) {
+        const sub = this._subscriptions.get(uri);
+        if (!sub) return;
+
+        try {
+            if (sub.subscription && typeof sub.subscription.disconnect === 'function') {
+                sub.subscription.disconnect();
+            } else if (typeof sub.subscription === 'function') {
+                sub.subscription();
+            } else if (sub.ctx?.socket?.disconnect) {
+                sub.ctx.socket.disconnect(uri, sub.listener);
+            }
+        } catch (e) {}
+
+        this._subscriptions.delete(uri);
+        this._subscribed.delete(uri);
+    },
+
+    async delete(url) {
+        return requestLCU('DELETE', url);
+    }
 };
 
 /**
  * Settings Utils
  */
 function settingsUtils(context, pluginConfig) {
-  if (window.SnoozeManager && window.SnoozeManager.__isLoader) return;
-  EmberHook.install(context);
+    if (window.SnoozeManager && window.SnoozeManager.__isLoader) return;
+    EmberHook.install(context);
 
-  const categoryTitles = window.SnoozeCategoryTitles = window.SnoozeCategoryTitles || new Map();
-  categoryTitles.set(pluginConfig.titleKey, pluginConfig.titleName);
+    const categoryTitles = window.SnoozeCategoryTitles = window.SnoozeCategoryTitles || new Map();
+    categoryTitles.set(pluginConfig.titleKey, pluginConfig.titleName);
 
-  // Shared registries written by every module, read by a single patch
-  const _smRoutes    = window.__SM_ROUTES    = window.__SM_ROUTES    || new Set();
-  const _smTemplates = window.__SM_TEMPLATES = window.__SM_TEMPLATES || new Map();
+    // Shared registries written by every module, read by a single patch
+    const _smRoutes = window.__SM_ROUTES = window.__SM_ROUTES || new Set();
+    const _smTemplates = window.__SM_TEMPLATES = window.__SM_TEMPLATES || new Map();
 
-  _smRoutes.add(pluginConfig.name);
-  _smTemplates.set(pluginConfig.name, pluginConfig);
+    _smRoutes.add(pluginConfig.name);
+    _smTemplates.set(pluginConfig.name, pluginConfig);
 
-  const strings = {
-    'snooze_plugins':         'Plugins',
-    'snooze_plugins_capital': 'PLUGINS',
-    [pluginConfig.titleKey]:         pluginConfig.titleName,
-    [pluginConfig.capitalTitleKey]:  pluginConfig.capitalTitleName
-  };
+    const strings = {
+        'snooze_plugins': 'Plugins',
+        'snooze_plugins_capital': 'PLUGINS',
+        [pluginConfig.titleKey]: pluginConfig.titleName,
+        [pluginConfig.capitalTitleKey]: pluginConfig.capitalTitleName
+    };
 
-  context.rcp.postInit("rcp-fe-lol-settings", async (rcp) => {
-    const em = await window.__SM_EMBER.getEmber();
+    context.rcp.postInit("rcp-fe-lol-settings", async (rcp) => {
+        const em = await window.__SM_EMBER.getEmber();
 
-    let pluginGroup = rcp._modalManager._registeredCategoryGroups.find(g => g.name === "plugins");
-    if (!pluginGroup) {
-      pluginGroup = { name: "plugins", titleKey: "snooze_plugins", capitalTitleKey: "snooze_plugins_capital", categories: [] };
-      rcp._modalManager._registeredCategoryGroups.splice(1, 0, pluginGroup);
-    }
+        let pluginGroup = rcp._modalManager._registeredCategoryGroups.find(g => g.name === "plugins");
+        if (!pluginGroup) {
+            pluginGroup = {
+                name: "plugins",
+                titleKey: "snooze_plugins",
+                capitalTitleKey: "snooze_plugins_capital",
+                categories: []
+            };
+            rcp._modalManager._registeredCategoryGroups.splice(1, 0, pluginGroup);
+        }
 
-    if (!pluginGroup.categories.some(c => c.name === pluginConfig.name)) {
-      pluginGroup.categories.push({
-        name: pluginConfig.name,
-        titleKey: pluginConfig.titleKey,
-        routeName: pluginConfig.name,
-        group: pluginGroup,
-        computeds: em.Object.create({ disabled: false }),
-        isEnabled: () => true
-      });
-    }
+        if (!pluginGroup.categories.some(c => c.name === pluginConfig.name)) {
+            pluginGroup.categories.push({
+                name: pluginConfig.name,
+                titleKey: pluginConfig.titleKey,
+                routeName: pluginConfig.name,
+                group: pluginGroup,
+                computeds: em.Object.create({
+                    disabled: false
+                }),
+                isEnabled: () => true
+            });
+        }
 
-    pluginGroup.categories.sort((a, b) => {
-      const titleA = categoryTitles.get(a.titleKey) || a.name || '';
-      const titleB = categoryTitles.get(b.titleKey) || b.name || '';
-      return titleA.localeCompare(titleB);
+        pluginGroup.categories.sort((a, b) => {
+            const titleA = categoryTitles.get(a.titleKey) || a.name || '';
+            const titleB = categoryTitles.get(b.titleKey) || b.name || '';
+            return titleA.localeCompare(titleB);
+        });
+
+        rcp._modalManager._refreshCategoryGroups();
     });
 
-    rcp._modalManager._refreshCategoryGroups();
-  });
+    context.rcp.postInit("rcp-fe-ember-libs", async (rcp) => {
+        window.__SM_EMBER = rcp;
+        const em = await rcp.getEmber();
 
-  context.rcp.postInit("rcp-fe-ember-libs", async (rcp) => {
-    window.__SM_EMBER = rcp;
-    const em = await rcp.getEmber();
+        // Router patch.  install once, route map reads from shared registry
+        if (!em.Router.__snoozePatched) {
+            em.Router.__snoozePatched = true;
+            const nativeExtend = em.Router.extend;
+            em.Router.extend = function() {
+                const patchedRouter = nativeExtend.apply(this, arguments);
+                patchedRouter.map(function() {
+                    _smRoutes.forEach(name => this.route(name));
+                });
+                return patchedRouter;
+            };
+        }
 
-    // Router patch.  install once, route map reads from shared registry
-    if (!em.Router.__snoozePatched) {
-      em.Router.__snoozePatched = true;
-      const nativeExtend = em.Router.extend;
-      em.Router.extend = function() {
-        const patchedRouter = nativeExtend.apply(this, arguments);
-        patchedRouter.map(function() {
-          _smRoutes.forEach(name => this.route(name));
-        });
-        return patchedRouter;
-      };
-    }
+        // App factory patch. install once, template build reads from shared registry
+        const appFactory = await rcp.getEmberApplicationFactory();
+        if (!appFactory.__snoozePatched) {
+            appFactory.__snoozePatched = true;
+            const nativeBuilder = appFactory.factoryDefinitionBuilder;
+            appFactory.factoryDefinitionBuilder = function() {
+                const def = nativeBuilder.apply(this, arguments);
+                const nativeBuild = def.build;
+                def.build = function() {
+                    if (this.getName() === "rcp-fe-lol-settings") {
+                        _smTemplates.forEach((cfg) => {
+                            this.addTemplate(
+                                cfg.name,
+                                em.HTMLBars.template({
+                                    id: cfg.name,
+                                    block: JSON.stringify({
+                                        statements: [
+                                            ["open-element", "lol-uikit-scrollable", []],
+                                            ["static-attr", "class", cfg.class],
+                                            ["flush-element"],
+                                            ["close-element"]
+                                        ],
+                                        locals: [],
+                                        named: [],
+                                        yields: [],
+                                        blocks: [],
+                                        hasPartials: false
+                                    }),
+                                    meta: {}
+                                })
+                            );
+                        });
+                    }
+                    return nativeBuild.apply(this, arguments);
+                };
+                return def;
+            };
+        }
+    });
 
-    // App factory patch. install once, template build reads from shared registry
-    const appFactory = await rcp.getEmberApplicationFactory();
-    if (!appFactory.__snoozePatched) {
-      appFactory.__snoozePatched = true;
-      const nativeBuilder = appFactory.factoryDefinitionBuilder;
-      appFactory.factoryDefinitionBuilder = function() {
-        const def = nativeBuilder.apply(this, arguments);
-        const nativeBuild = def.build;
-        def.build = function() {
-          if (this.getName() === "rcp-fe-lol-settings") {
-            _smTemplates.forEach((cfg) => {
-              this.addTemplate(
-                cfg.name,
-                em.HTMLBars.template({
-                  id: cfg.name,
-                  block: JSON.stringify({
-                    statements: [
-                      ["open-element", "lol-uikit-scrollable", []],
-                      ["static-attr", "class", cfg.class],
-                      ["flush-element"],
-                      ["close-element"]
-                    ],
-                    locals: [], named: [], yields: [], blocks: [], hasPartials: false
-                  }),
-                  meta: {}
-                })
-              );
-            });
-          }
-          return nativeBuild.apply(this, arguments);
+    context.rcp.postInit("rcp-fe-lol-l10n", async (rcp) => {
+        const l10n = rcp.tra();
+        const nativeGet = l10n.__proto__.get;
+        l10n.__proto__.get = function(key) {
+            return strings[key] !== undefined ? strings[key] : nativeGet.call(this, key);
         };
-        return def;
-      };
-    }
-  });
+    });
 
-  context.rcp.postInit("rcp-fe-lol-l10n", async (rcp) => {
-    const l10n = rcp.tra();
-    const nativeGet = l10n.__proto__.get;
-    l10n.__proto__.get = function(key) {
-      return strings[key] !== undefined ? strings[key] : nativeGet.call(this, key);
-    };
-  });
-
-  if (LCU && !LCU._ctx) LCU.bind(context);
+    if (LCU && !LCU._ctx) LCU.bind(context);
 }
 
 function createToggleRow(labelText, checked, onChange) {
@@ -917,81 +1048,163 @@ function createInfoBox(htmlContent) {
 // Shared Assets & Match History Helpers
 
 const Assets = {
-  champs: {}, items: {}, spells: {}, perks: {}, queues: [],
-  _initPromise: null,
-  _initialized: false,
-  _maxRetries: 15,
-  async init() {
-    if (!LCU) return;
-    if (this._initialized) return;
-    if (this._initPromise) return this._initPromise;
+    champs: {},
+    items: {},
+    spells: {},
+    perks: {},
+    queues: [],
+    skins: new Map(),
+    summonerIcons: new Map(),
+    wardSkins: new Map(),
+    _initPromise: null,
+    _initialized: false,
+    _maxRetries: 15,
+    async init() {
+        if (!LCU) return;
+        if (this._initialized) return;
+        if (this._initPromise) return this._initPromise;
 
-    this._initPromise = (async () => {
-      const attemptFetch = async () => {
-        const [c, i, s, p, ps, q] = await Promise.all([
-          LCU.get('/lol-game-data/assets/v1/champion-summary.json').catch(()=>[]),
-          LCU.get('/lol-game-data/assets/v1/items.json').catch(()=>[]),
-          LCU.get('/lol-game-data/assets/v1/summoner-spells.json').catch(()=>[]),
-          LCU.get('/lol-game-data/assets/v1/perks.json').catch(()=>[]),
-          LCU.get('/lol-game-data/assets/v1/perkstyles.json').catch(()=>({styles:[]})),
-          LCU.get('/lol-game-queues/v1/queues').catch(()=>[])
-        ]);
-        return { c, i, s, p, ps, q };
-      };
+        this._initPromise = (async () => {
+            const attemptFetch = async () => {
+                const [c, i, s, p, ps, q, sk, si, ws] = await Promise.all([
+                    LCU.get('/lol-game-data/assets/v1/champion-summary.json').catch(() => []),
+                    LCU.get('/lol-game-data/assets/v1/items.json').catch(() => []),
+                    LCU.get('/lol-game-data/assets/v1/summoner-spells.json').catch(() => []),
+                    LCU.get('/lol-game-data/assets/v1/perks.json').catch(() => []),
+                    LCU.get('/lol-game-data/assets/v1/perkstyles.json').catch(() => ({
+                        styles: []
+                    })),
+                    LCU.get('/lol-game-queues/v1/queues').catch(() => []),
+                    LCU.get('/lol-game-data/assets/v1/skins.json').catch(() => []),
+                    LCU.get('/lol-game-data/assets/v1/summoner-icons.json').catch(() => []),
+                    LCU.get('/lol-game-data/assets/v1/ward-skins.json').catch(() => [])
+                ]);
+                return {
+                    c,
+                    i,
+                    s,
+                    p,
+                    ps,
+                    q,
+                    sk,
+                    si,
+                    ws
+                };
+            };
 
-      for (let attempt = 1; attempt <= this._maxRetries; attempt++) {
-        try {
-          const { c, i, s, p, ps, q } = await attemptFetch();
+            for (let attempt = 1; attempt <= this._maxRetries; attempt++) {
+                try {
+                    const {
+                        c,
+                        i,
+                        s,
+                        p,
+                        ps,
+                        q,
+                        sk,
+                        si,
+                        ws
+                    } = await attemptFetch();
 
-          if (Array.isArray(c) && c.length > 0) c.forEach(x => this.champs[x.id] = x);
-          if (Array.isArray(i) && i.length > 0) i.forEach(x => this.items[x.id] = x);
-          if (Array.isArray(s) && s.length > 0) s.forEach(x => this.spells[x.id] = x);
-          if (Array.isArray(p) && p.length > 0) p.forEach(x => this.perks[x.id] = x);
-          if (ps && Array.isArray(ps.styles) && ps.styles.length > 0) ps.styles.forEach(x => this.perks[x.id] = x);
-          if (Array.isArray(q) && q.length > 0) {
-            this.queues = q.filter(x => x.name && x.id).map(x => ({
-              ...x, tag: 'q_' + x.id
-            })).sort((a, b) => {
-              const catOrder = { PvP: 0, VersusAi: 1, Custom: 2 };
-              const ac = catOrder[a.category] ?? 3;
-              const bc = catOrder[b.category] ?? 3;
-              if (ac !== bc) return ac - bc;
-              return a.name.localeCompare(b.name);
-            });
-          }
+                    if (Array.isArray(c) && c.length > 0) c.forEach(x => this.champs[x.id] = x);
+                    if (Array.isArray(i) && i.length > 0) i.forEach(x => this.items[x.id] = x);
+                    if (Array.isArray(s) && s.length > 0) s.forEach(x => this.spells[x.id] = x);
+                    if (Array.isArray(p) && p.length > 0) p.forEach(x => this.perks[x.id] = x);
+                    if (ps && Array.isArray(ps.styles) && ps.styles.length > 0) ps.styles.forEach(x => this.perks[x.id] = x);
+                    if (Array.isArray(q) && q.length > 0) {
+                        this.queues = q.filter(x => x.name && x.id).map(x => ({
+                            ...x,
+                            tag: 'q_' + x.id
+                        })).sort((a, b) => {
+                            const catOrder = {
+                                PvP: 0,
+                                VersusAi: 1,
+                                Custom: 2
+                            };
+                            const ac = catOrder[a.category] ?? 3;
+                            const bc = catOrder[b.category] ?? 3;
+                            if (ac !== bc) return ac - bc;
+                            return a.name.localeCompare(b.name);
+                        });
+                    }
 
-          if (this.queues.length > 0 && Object.keys(this.champs).length > 0) {
-            this._initialized = true;
-            Debug.log(`[Assets] Initialized (${Object.keys(this.champs).length} champs, ${this.queues.length} queues)`);
-            return;
-          }
+                    if (Array.isArray(sk)) {
+                        sk.forEach(x => {
+                            if (x?.id === undefined) return;
+                            const numId = Number(x.id);
+                            this.skins.set(numId, x);
+                            if (Array.isArray(x.chromas)) {
+                                x.chromas.forEach(ch => {
+                                    if (ch?.id !== undefined) this.skins.set(Number(ch.id), { ...x, id: Number(ch.id) });
+                                });
+                            }
+                        });
+                    } else if (sk && typeof sk === 'object') {
+                        Object.values(sk).forEach(x => {
+                            if (x?.id === undefined) return;
+                            const numId = Number(x.id);
+                            this.skins.set(numId, x);
+                            if (Array.isArray(x.chromas)) {
+                                x.chromas.forEach(ch => {
+                                    if (ch?.id !== undefined) this.skins.set(Number(ch.id), { ...x, id: Number(ch.id) });
+                                });
+                            }
+                        });
+                    }
 
-          if (attempt < this._maxRetries) {
-            const delay = Math.min(1000 * Math.pow(2, attempt), 30000);
-            Debug.log(`[Assets] Retry ${attempt}/${this._maxRetries} in ${delay}ms (game-data may not be ready)`);
-            await new Promise(r => setTimeout(r, delay));
-          }
-        } catch (e) {
-          if (attempt >= this._maxRetries) {
-            Debug.log('[Assets] Failed after max retries', e);
-            throw e;
-          }
-          const delay = Math.min(1000 * Math.pow(2, attempt), 30000);
-          Debug.log(`[Assets] Retry ${attempt}/${this._maxRetries} in ${delay}ms (error: ${e.message})`);
-          await new Promise(r => setTimeout(r, delay));
-        }
-      }
-    })();
+                    if (Array.isArray(si)) {
+                        si.forEach(x => { if (x?.id !== undefined) this.summonerIcons.set(Number(x.id), x); });
+                    } else if (si && typeof si === 'object') {
+                        Object.values(si).forEach(x => { if (x?.id !== undefined) this.summonerIcons.set(Number(x.id), x); });
+                    }
 
-    return this._initPromise;
-  },
-  getIcon(type, id) {
-    if (!id || id <= 0) return '';
-    const obj = this[type][id];
-    let path = obj?.iconPath || obj?.squarePortraitPath || '';
-    if (path) path = path.replace('/lol-game-data/assets/', '/lol-game-data/assets/'); 
-    return path;
-  }
+                    if (Array.isArray(ws)) {
+                        ws.forEach(x => { if (x?.id !== undefined) this.wardSkins.set(Number(x.id), x); });
+                    } else if (ws && typeof ws === 'object') {
+                        Object.values(ws).forEach(x => { if (x?.id !== undefined) this.wardSkins.set(Number(x.id), x); });
+                    }
+
+                    if (this.queues.length > 0 && Object.keys(this.champs).length > 0) {
+                        this._initialized = true;
+                        Debug.log(`[Assets] Initialized (${Object.keys(this.champs).length} champs, ${this.queues.length} queues)`);
+                        return;
+                    }
+
+                    if (attempt < this._maxRetries) {
+                        const delay = Math.min(1000 * Math.pow(2, attempt), 30000);
+                        Debug.log(`[Assets] Retry ${attempt}/${this._maxRetries} in ${delay}ms (game-data may not be ready)`);
+                        await new Promise(r => setTimeout(r, delay));
+                    }
+                } catch (e) {
+                    if (attempt >= this._maxRetries) {
+                        Debug.log('[Assets] Failed after max retries', e);
+                        throw e;
+                    }
+                    const delay = Math.min(1000 * Math.pow(2, attempt), 30000);
+                    Debug.log(`[Assets] Retry ${attempt}/${this._maxRetries} in ${delay}ms (error: ${e.message})`);
+                    await new Promise(r => setTimeout(r, delay));
+                }
+            }
+        })();
+
+        return this._initPromise;
+    },
+    getIcon(type, id) {
+        if (!id || id <= 0) return '';
+        const obj = this[type][id];
+        let path = obj?.iconPath || obj?.squarePortraitPath || '';
+        if (path) path = path.replace('/lol-game-data/assets/', '/lol-game-data/assets/');
+        return path;
+    },
+    getSkin(id) {
+        return this.skins.get(Number(id)) || null;
+    },
+    getSummonerIcon(id) {
+        return this.summonerIcons.get(Number(id)) || null;
+    },
+    getWardSkin(id) {
+        return this.wardSkins.get(Number(id)) || null;
+    }
 };
 
 const sgpContextCache = new Map();
@@ -1001,14 +1214,14 @@ async function getSgpContext(overrideRegion = null) {
     const now = Date.now();
     const cacheKey = overrideRegion || 'LOCAL';
     const cached = sgpContextCache.get(cacheKey);
-    
+
     if (cached && now < cached.expiresAt) return cached;
     if (sgpContextPromise.has(cacheKey)) return sgpContextPromise.get(cacheKey);
 
     const promise = (async () => {
         const entToken = await LCU.get('/entitlements/v1/token').catch(() => null);
         let serverCode = 'EUW';
-        
+
         if (overrideRegion) {
             serverCode = overrideRegion;
         } else {
@@ -1019,7 +1232,7 @@ async function getSgpContext(overrideRegion = null) {
                 const externalMatch = entToken.issuer.match(/https?:\/\/([a-z0-9]+)-[a-z0-9]+\.(?:lol\.)?sgp\.pvp\.net/);
                 if (externalMatch) serverCode = externalMatch[1].toUpperCase();
             }
-            
+
             // Normalize regions to SGP routing codes
             if (serverCode === 'EUW1') serverCode = 'EUW';
             if (serverCode === 'NA' || serverCode === 'NA1') serverCode = 'NA1';
@@ -1034,23 +1247,74 @@ async function getSgpContext(overrideRegion = null) {
         }
 
         const SGP_SERVERS = {
-            TW2:  { matchHistory: 'https://apse1-red.pp.sgp.pvp.net', common: 'https://tw2-red.lol.sgp.pvp.net' },
-            SG2:  { matchHistory: 'https://apse1-red.pp.sgp.pvp.net', common: 'https://sg2-red.lol.sgp.pvp.net' },
-            PH2:  { matchHistory: 'https://apse1-red.pp.sgp.pvp.net', common: 'https://ph2-red.lol.sgp.pvp.net' },
-            VN2:  { matchHistory: 'https://apse1-red.pp.sgp.pvp.net', common: 'https://vn2-red.lol.sgp.pvp.net' },
-            TH2:  { matchHistory: 'https://apse1-red.pp.sgp.pvp.net', common: 'https://th2-red.lol.sgp.pvp.net' },
-            JP1:  { matchHistory: 'https://apne1-red.pp.sgp.pvp.net', common: 'https://jp-red.lol.sgp.pvp.net' },
-            KR:   { matchHistory: 'https://apne1-red.pp.sgp.pvp.net', common: 'https://kr-red.lol.sgp.pvp.net' },
-            NA1:  { matchHistory: 'https://usw2-red.pp.sgp.pvp.net', common: 'https://na-red.lol.sgp.pvp.net' },
-            BR1:  { matchHistory: 'https://usw2-red.pp.sgp.pvp.net', common: 'https://br-red.lol.sgp.pvp.net' },
-            LA1:  { matchHistory: 'https://usw2-red.pp.sgp.pvp.net', common: 'https://lan-red.lol.sgp.pvp.net' },
-            LA2:  { matchHistory: 'https://usw2-red.pp.sgp.pvp.net', common: 'https://las-red.lol.sgp.pvp.net' },
-            PBE:  { matchHistory: 'https://usw2-red.pp.sgp.pvp.net', common: 'https://pbe-red.lol.sgp.pvp.net' },
-            OC1:  { matchHistory: 'https://apse1-red.pp.sgp.pvp.net', common: 'https://oce-red.lol.sgp.pvp.net' },
-            EUW:  { matchHistory: 'https://euc1-red.pp.sgp.pvp.net', common: 'https://euw-red.lol.sgp.pvp.net' },
-            EUN1: { matchHistory: 'https://euc1-red.pp.sgp.pvp.net', common: 'https://eune-red.lol.sgp.pvp.net' },
-            TR1:  { matchHistory: 'https://euc1-red.pp.sgp.pvp.net', common: 'https://tr-red.lol.sgp.pvp.net' },
-            RU:   { matchHistory: 'https://euc1-red.pp.sgp.pvp.net', common: 'https://ru-red.lol.sgp.pvp.net' }
+            TW2: {
+                matchHistory: 'https://apse1-red.pp.sgp.pvp.net',
+                common: 'https://tw2-red.lol.sgp.pvp.net'
+            },
+            SG2: {
+                matchHistory: 'https://apse1-red.pp.sgp.pvp.net',
+                common: 'https://sg2-red.lol.sgp.pvp.net'
+            },
+            PH2: {
+                matchHistory: 'https://apse1-red.pp.sgp.pvp.net',
+                common: 'https://ph2-red.lol.sgp.pvp.net'
+            },
+            VN2: {
+                matchHistory: 'https://apse1-red.pp.sgp.pvp.net',
+                common: 'https://vn2-red.lol.sgp.pvp.net'
+            },
+            TH2: {
+                matchHistory: 'https://apse1-red.pp.sgp.pvp.net',
+                common: 'https://th2-red.lol.sgp.pvp.net'
+            },
+            JP1: {
+                matchHistory: 'https://apne1-red.pp.sgp.pvp.net',
+                common: 'https://jp-red.lol.sgp.pvp.net'
+            },
+            KR: {
+                matchHistory: 'https://apne1-red.pp.sgp.pvp.net',
+                common: 'https://kr-red.lol.sgp.pvp.net'
+            },
+            NA1: {
+                matchHistory: 'https://usw2-red.pp.sgp.pvp.net',
+                common: 'https://na-red.lol.sgp.pvp.net'
+            },
+            BR1: {
+                matchHistory: 'https://usw2-red.pp.sgp.pvp.net',
+                common: 'https://br-red.lol.sgp.pvp.net'
+            },
+            LA1: {
+                matchHistory: 'https://usw2-red.pp.sgp.pvp.net',
+                common: 'https://lan-red.lol.sgp.pvp.net'
+            },
+            LA2: {
+                matchHistory: 'https://usw2-red.pp.sgp.pvp.net',
+                common: 'https://las-red.lol.sgp.pvp.net'
+            },
+            PBE: {
+                matchHistory: 'https://usw2-red.pp.sgp.pvp.net',
+                common: 'https://pbe-red.lol.sgp.pvp.net'
+            },
+            OC1: {
+                matchHistory: 'https://apse1-red.pp.sgp.pvp.net',
+                common: 'https://oce-red.lol.sgp.pvp.net'
+            },
+            EUW: {
+                matchHistory: 'https://euc1-red.pp.sgp.pvp.net',
+                common: 'https://euw-red.lol.sgp.pvp.net'
+            },
+            EUN1: {
+                matchHistory: 'https://euc1-red.pp.sgp.pvp.net',
+                common: 'https://eune-red.lol.sgp.pvp.net'
+            },
+            TR1: {
+                matchHistory: 'https://euc1-red.pp.sgp.pvp.net',
+                common: 'https://tr-red.lol.sgp.pvp.net'
+            },
+            RU: {
+                matchHistory: 'https://euc1-red.pp.sgp.pvp.net',
+                common: 'https://ru-red.lol.sgp.pvp.net'
+            }
         };
 
         let matchHistoryBase = '';
@@ -1078,10 +1342,10 @@ async function getSgpContext(overrideRegion = null) {
         if (!commonBase) commonBase = 'https://euw-red.lol.sgp.pvp.net';
 
         // sgpBase acts as an alias for matchHistoryBase to ensure older code doesn't break
-        const context = { 
-            accessToken: entToken?.accessToken, 
-            sgpBase: matchHistoryBase, 
-            matchHistoryBase, 
+        const context = {
+            accessToken: entToken?.accessToken,
+            sgpBase: matchHistoryBase,
+            matchHistoryBase,
             commonBase,
             expiresAt: now + 5 * 60 * 1000
         };
@@ -1100,17 +1364,25 @@ async function getSgpContext(overrideRegion = null) {
 async function getSgpMatchHistory(puuid, startIndex = 0, count = 20, tag = '', overrideRegion = null) {
     if (!LCU) return null;
     try {
-        const { accessToken, sgpBase } = await getSgpContext(overrideRegion);
+        const {
+            accessToken,
+            sgpBase
+        } = await getSgpContext(overrideRegion);
 
         let url = `${sgpBase}/match-history-query/v1/products/lol/player/${puuid}/SUMMARY?startIndex=${startIndex}&count=${count}`;
         if (tag) url += `&tag=${tag}`;
 
-        const resp = await fetch(url, { headers: { 'Authorization': `Bearer ${accessToken}`, 'User-Agent': 'LeagueOfLegendsClient' } });
+        const resp = await fetch(url, {
+            headers: {
+                'Authorization': `Bearer ${accessToken}`,
+                'User-Agent': 'LeagueOfLegendsClient'
+            }
+        });
         if (!resp.ok) throw new Error('SGP Error: ' + resp.status);
         return resp.json();
-    } catch(err) {
-      Debug.error('SGP Match History Error:', err);
-      return null;
+    } catch (err) {
+        Debug.error('SGP Match History Error:', err);
+        return null;
     }
 }
 
@@ -1145,7 +1417,7 @@ const FetchHook = {
 
             try {
                 const response = await originalFetch(currentInput, currentInit);
-                
+
                 let hooksToRun = [];
                 for (const [pattern, callbacks] of this._resHooks.entries()) {
                     const matched = pattern instanceof RegExp ? pattern.test(urlStr) : urlStr.includes(pattern);
@@ -1240,10 +1512,10 @@ const XhrHook = {
 
             if (matchedPre.length > 0 || matchedPost.length > 0) {
                 const originalSend = this.send;
-                
+
                 this.send = function(body) {
                     let currentBody = body;
-                    
+
                     for (const cb of matchedPre) {
                         currentBody = cb(this.__method, this.__urlStr, this, currentBody) ?? currentBody;
                     }
@@ -1363,7 +1635,7 @@ const Store = {
 
     _load() {
         if (this._cache) return this._cache;
-        
+
         // Migrate data from previous temporary name 'Snooze-Modules' to 'Snooze-Store'
         if (window.DataStore.has('Snooze-Modules')) {
             const oldData = window.DataStore.get('Snooze-Modules');
@@ -1372,8 +1644,10 @@ const Store = {
         }
 
         const data = window.DataStore.get(this.MAIN_KEY);
-        this._cache = (data && typeof data === 'object') ? data : { schemaVersion: 0 };
-        
+        this._cache = (data && typeof data === 'object') ? data : {
+            schemaVersion: 0
+        };
+
         if (this._cache.schemaVersion === undefined) {
             this._cache.schemaVersion = 0;
         }
@@ -1425,21 +1699,23 @@ const Store = {
 
     migrateLegacyKeys(mapping, moduleVersion = 1) {
         const data = this._load();
-        
+
         let migrated = false;
 
         for (const [oldKey, target] of Object.entries(mapping)) {
             if (!data[target.module]) data[target.module] = {};
-            
+
             // Skip if this specific module has already been migrated to the requested version
             if (data[target.module].schemaVersion >= moduleVersion) continue;
 
             if (window.DataStore.has(oldKey)) {
                 let oldVal = window.DataStore.get(oldKey);
                 if (typeof oldVal === "string" && (oldVal.startsWith("{") || oldVal.startsWith("["))) {
-                    try { oldVal = JSON.parse(oldVal); } catch (e) {}
+                    try {
+                        oldVal = JSON.parse(oldVal);
+                    } catch (e) {}
                 }
-                
+
                 data[target.module][target.key] = oldVal;
                 window.DataStore.remove(oldKey);
                 migrated = true;
@@ -1465,6 +1741,7 @@ const Store = {
 const Panic = {
     _callbacks: new Set(),
     _installed: false,
+    _keydownHandler: null,
 
     install() {
         if (this._installed) return;
@@ -1474,19 +1751,31 @@ const Panic = {
             Store.set('global', 'panicKey', 'F2');
         }
 
-        document.addEventListener('keydown', (e) => {
+        this._keydownHandler = (e) => {
             const key = Store.get('global', 'panicKey') || 'F2';
             if (e.key.toLowerCase() === key.toLowerCase() && this._callbacks.size > 0) {
                 e.preventDefault();
                 e.stopPropagation();
 
                 this._callbacks.forEach(cb => {
-                    try { cb(); } catch(err) {}
+                    try {
+                        cb();
+                    } catch (err) {}
                 });
 
                 Toast.success('Auto Actions Cancelled');
             }
-        });
+        };
+        document.addEventListener('keydown', this._keydownHandler);
+    },
+
+    uninstall() {
+        if (this._keydownHandler) {
+            document.removeEventListener('keydown', this._keydownHandler);
+        }
+        this._keydownHandler = null;
+        this._callbacks.clear();
+        this._installed = false;
     },
 
     register(callback) {
@@ -1514,14 +1803,23 @@ function createHotkeyRow(labelText, currentKey, onChange, descriptionText) {
 
     const label = document.createElement('span');
     label.textContent = labelText;
-    Object.assign(label.style, { color: '#f0e6d2', fontSize: '13px' });
+    Object.assign(label.style, {
+        color: '#f0e6d2',
+        fontSize: '13px'
+    });
 
     const btn = document.createElement('button');
     btn.textContent = currentKey || 'Unbound';
     Object.assign(btn.style, {
-        background: '#111', color: '#c8aa6e', border: '1px solid #3e2e13',
-        padding: '5px 12px', borderRadius: '4px', cursor: 'pointer', minWidth: '80px',
-        fontSize: '12px', fontWeight: 'bold'
+        background: '#111',
+        color: '#c8aa6e',
+        border: '1px solid #3e2e13',
+        padding: '5px 12px',
+        borderRadius: '4px',
+        cursor: 'pointer',
+        minWidth: '80px',
+        fontSize: '12px',
+        fontWeight: 'bold'
     });
 
     let listening = false;
@@ -1552,22 +1850,256 @@ function createHotkeyRow(labelText, currentKey, onChange, descriptionText) {
     if (descriptionText) {
         const desc = document.createElement('div');
         desc.textContent = descriptionText;
-        Object.assign(desc.style, { color: '#8a9aaa', fontSize: '12px', marginTop: '6px', lineHeight: '1.4' });
+        Object.assign(desc.style, {
+            color: '#8a9aaa',
+            fontSize: '12px',
+            marginTop: '6px',
+            lineHeight: '1.4'
+        });
         container.appendChild(desc);
     }
 
     return container;
 }
 
+/**
+ * Performance scoring utility - normalizes player stats from different sources
+ * and computes z-score rated performance (1-10 scale).
+ *
+ * Usage:
+ *   // From eogStatsBlock (autoHonor):
+ *   const players = Scoring.normalizeEogStats(eogStats);
+ *   const scores = Scoring.computeScores(players);
+ *   scores.get(puuid) // { score, kda, kills, deaths, assists, rank, _scoreRatio }
+ *
+ *   // From match history (gameAnalysisPopup):
+ *   const players = Scoring.normalizeParticipants(participants);
+ *   const scores = Scoring.computeScores(players);
+ */
+const Scoring = {
+    normalizeEogStats(eogStats) {
+        const players = [];
+        for (const team of eogStats?.teams || []) {
+            for (const p of team.players || []) {
+                const s = p.stats || {};
+                players.push({
+                    puuid: p.puuid,
+                    kills: s.CHAMPIONS_KILLED || 0,
+                    deaths: s.NUM_DEATHS || 0,
+                    assists: s.ASSISTS || 0,
+                    damage: s.TOTAL_DAMAGE_DEALT_TO_CHAMPIONS || 0,
+                    gold: s.GOLD_EARNED || 0,
+                    cs: (s.MINIONS_KILLED || 0) + (s.NEUTRAL_MINIONS_KILLED || 0),
+                    vision: s.VISION_SCORE || 0,
+                    healing: (s.TOTAL_HEAL_ON_TEAMMATES || 0) + (s.TOTAL_DAMAGE_SHIELDED_ON_TEAMMATES || 0),
+                    tanking: (s.TOTAL_DAMAGE_TAKEN || 0) + (s.TOTAL_DAMAGE_SELF_MITIGATED || 0),
+                    win: s.WIN || false,
+                    teamId: team.teamId,
+                    championName: p.championName || p.championId
+                });
+            }
+        }
+        return players;
+    },
+
+    normalizeParticipants(participants) {
+        return (participants || []).map(p => ({
+            puuid: p.puuid,
+            kills: p.kills || 0,
+            deaths: p.deaths || 0,
+            assists: p.assists || 0,
+            damage: p.totalDamageDealtToChampions || 0,
+            gold: p.goldEarned || 0,
+            cs: (p.totalMinionsKilled || 0) + (p.neutralMinionsKilled || 0),
+            healing: (p.totalHealsOnTeammates || 0) + (p.totalDamageShieldedOnTeammates || 0),
+            tanking: (p.totalDamageTaken || 0) + (p.damageSelfMitigated || 0),
+            win: p.win || false,
+            teamId: p.teamId,
+            championName: p.championName || p.championId
+        }));
+    },
+
+    computeScores(players) {
+        return this._compute(players).scores;
+    },
+
+    computeScoresDetailed(players) {
+        return this._compute(players);
+    },
+
+    _compute(players) {
+        if (!players?.length) return { scores: new Map(), entries: [] };
+
+        const gameDmg = players.reduce((s, p) => s + p.damage, 0) || 1;
+        const gameGold = players.reduce((s, p) => s + p.gold, 0) || 1;
+
+        const teamKills = {};
+        players.forEach(p => {
+            teamKills[p.teamId] = (teamKills[p.teamId] || 0) + p.kills;
+        });
+
+        function mmNorm(arr) {
+            const mn = Math.min(...arr), mx = Math.max(...arr), rng = mx - mn || 1e-6;
+            return arr.map(v => (v - mn) / rng);
+        }
+
+        const entries = players.map(p => {
+            const kda = (p.kills + p.assists) / Math.max(1, p.deaths);
+            const kdaNorm = kda / (kda + 4);
+            const tk = teamKills[p.teamId] || 1;
+            const kp = (p.kills + p.assists) / tk;
+            const killShare = p.kills / tk;
+            const dmgFrac = p.damage / gameDmg;
+            const healFrac = (p.healing || 0) / gameDmg;
+            const tankFrac = (p.tanking || 0) / gameDmg;
+
+            return {
+                puuid: p.puuid,
+                kills: p.kills,
+                deaths: p.deaths,
+                assists: p.assists,
+                kda,
+                kdaNorm,
+                kp,
+                killShare,
+                dmg: p.damage,
+                gold: p.gold,
+                cs: p.cs,
+                vision: p.vision || 0,
+                healing: p.healing || 0,
+                tanking: p.tanking || 0,
+                win: p.win,
+                teamId: p.teamId,
+                championName: p.championName,
+                dmgFrac,
+                healFrac,
+                tankFrac
+            };
+        });
+
+        const kdaN = mmNorm(entries.map(e => e.kdaNorm));
+        const kpN = mmNorm(entries.map(e => e.kp));
+        const killN = mmNorm(entries.map(e => e.killShare));
+        const dmgN = mmNorm(entries.map(e => e.dmg));
+        const goldN = mmNorm(entries.map(e => e.gold));
+
+        const composites = entries.map((e, i) => {
+            const hasRoleData = e.healFrac !== undefined || e.tankFrac !== undefined;
+            let composite;
+
+            if (hasRoleData && e.healFrac > 0.04) {
+                const healN = mmNorm(entries.map(x => x.healFrac))[i];
+                composite = kdaN[i] * 0.20 + kpN[i] * 0.30 + healN * 0.25 + dmgN[i] * 0.10 + goldN[i] * 0.15;
+            } else if (hasRoleData && e.tankFrac > 0.12 && e.dmgFrac < 0.10) {
+                const tankN = mmNorm(entries.map(x => x.tankFrac))[i];
+                composite = kdaN[i] * 0.25 + kpN[i] * 0.25 + tankN * 0.15 + dmgN[i] * 0.15 + goldN[i] * 0.20;
+            } else {
+                composite = kdaN[i] * 0.25 + kpN[i] * 0.20 + killN[i] * 0.15 + dmgN[i] * 0.25 + goldN[i] * 0.15;
+            }
+
+            return composite;
+        });
+
+        const mean = composites.reduce((a, b) => a + b, 0) / composites.length;
+        const std = Math.sqrt(composites.reduce((a, v) => a + (v - mean) ** 2, 0) / composites.length) || 1e-6;
+
+        const rawScores = entries.map((e, i) => {
+            const z = (composites[i] - mean) / std;
+            let score = 5.5 + z * 1.5 + (e.win ? 0.5 : -0.5);
+            score = Math.max(1.0, Math.min(10.0, Math.round(score * 10) / 10));
+            return { puuid: e.puuid, score, z, composite: composites[i] };
+        });
+
+        const scoreVals = rawScores.map(s => s.score);
+        const minScore = Math.min(...scoreVals);
+        const maxScore = Math.max(...scoreVals);
+        const range = maxScore - minScore || 1;
+
+        const result = new Map();
+        const detailed = entries.map((e, i) => {
+            const s = rawScores[i];
+            const hasRoleData = e.healFrac !== undefined || e.tankFrac !== undefined;
+            let role = 'carry';
+            if (hasRoleData && e.healFrac > 0.04) role = 'enchanter';
+            else if (hasRoleData && e.tankFrac > 0.12 && e.dmgFrac < 0.10) role = 'tank';
+
+            result.set(s.puuid, {
+                score: s.score,
+                kda: e.kda.toFixed(1),
+                kills: e.kills,
+                deaths: e.deaths,
+                assists: e.assists,
+                _scoreRatio: (s.score - minScore) / range
+            });
+
+            const tk = teamKills[e.teamId] || 1;
+
+            return {
+                puuid: e.puuid,
+                win: e.win,
+                score: s.score,
+                kda: +e.kda.toFixed(3),
+                kdaNorm: +e.kdaNorm.toFixed(3),
+                kp: +e.kp.toFixed(3),
+                killShare: +e.killShare.toFixed(3),
+                kills: e.kills,
+                deaths: e.deaths,
+                assists: e.assists,
+                teamKills: tk,
+                dmg: e.dmg,
+                gold: e.gold,
+                cs: e.cs,
+                healing: e.healing || 0,
+                tanking: e.tanking || 0,
+                teamId: e.teamId,
+                championName: e.championName,
+                healFrac: +e.healFrac.toFixed(4),
+                tankFrac: +e.tankFrac.toFixed(4),
+                dmgFrac: +e.dmgFrac.toFixed(4),
+                role,
+                kdaN: +kdaN[i].toFixed(3),
+                kpN: +kpN[i].toFixed(3),
+                killN: +killN[i].toFixed(3),
+                dmgN: +dmgN[i].toFixed(3),
+                goldN: +goldN[i].toFixed(3),
+                composite: +s.composite.toFixed(4),
+                z: +s.z.toFixed(3)
+            };
+        });
+
+        return { scores: result, entries: detailed, gameDmg, teamKills };
+    }
+};
+
 export const Utils = {
-    DOM: { createSmartObserver, observer },
-    Hooks: { Ember: EmberHook, Fetch: FetchHook, Xhr: XhrHook, WS: WSHook },
-	Debug,
+    Scoring,
+    DOM: {
+        createSmartObserver,
+        observer
+    },
+    Hooks: {
+        Ember: EmberHook,
+        Fetch: FetchHook,
+        Xhr: XhrHook,
+        WS: WSHook
+    },
+    Debug,
     LCU,
     Store,
     Panic,
-	Toast, 
-    Settings: { inject: settingsUtils, createToggleRow, createSelectRow, createNumberInputRow, createInfoBox, createHotkeyRow },
-    GameData: { Assets, getSgpContext, getSgpMatchHistory }
+    Toast,
+    Settings: {
+        inject: settingsUtils,
+        createToggleRow,
+        createSelectRow,
+        createNumberInputRow,
+        createInfoBox,
+        createHotkeyRow
+    },
+    GameData: {
+        Assets,
+        getSgpContext,
+        getSgpMatchHistory
+    }
 };
 export default Utils;

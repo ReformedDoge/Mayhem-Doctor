@@ -29,13 +29,12 @@ export async function loadStaticData() {
             ITEM_DATA[i.id] = { name: i.name, icon: i.iconPath };
 
             // Augment BOOT_IDS with any boots not already in the hardcoded seed.
-            // No inStore filter — quest/special boots are valid if players can obtain
+            // No inStore filter - quest/special boots are valid if players can obtain
             // them. If they don't appear in match data they contribute nothing anyway.
             const cats = i.categories || [];
             if (cats.includes('Boots') && i.id !== 1001 && !BOOT_IDS.has(i.id)) {
                 BOOT_IDS.add(i.id);
-                // uncomment for debugging new boots added by Riot in future patches.
-                // console.log(`[Mayhem-Doctor] Detected new boot from items.json: ${i.name} (${i.id})`);
+                Utils.Debug.log(`[Mayhem-Doctor] Detected new boot from items.json: ${i.name} (${i.id})`);
             }
         });
 
@@ -48,7 +47,7 @@ export async function loadStaticData() {
         const spells = await LCU_API.get('/lol-game-data/assets/v1/summoner-spells.json');
         spells.forEach(s => { if (s.id) SUMMONER_SPELL_DATA[s.id] = { name: s.name, icon: s.iconPath }; });
 
-    } catch (e) { console.error('[Mayhem-Doctor] Static data load failed:', e); }
+    } catch (e) { Utils.Debug.error('[Mayhem-Doctor] Static data load failed:', e); }
 }
 
 // Icon helpers
@@ -74,7 +73,7 @@ export async function getSgpContext() {
         const { accessToken, sgpBase } = await Utils.GameData.getSgpContext();
         return { rso: { token: accessToken }, sgpServer: sgpBase };
     } catch (err) {
-        console.error('Failed to build SGP context:', err);
+        Utils.Debug.error('Failed to build SGP context:', err);
         return { rso: null, sgpServer: 'https://euc1-red.pp.sgp.pvp.net' };
     }
 }

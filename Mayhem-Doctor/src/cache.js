@@ -9,6 +9,8 @@
 
 import { MAX_CACHED_PUUIDS, MAX_BYTES_PER_PUUID, MAX_TOTAL_BYTES } from './config.js';
 import { STORE_KEYS, STORE_MODULES, storeGet, storeRemove, storeSet } from './store.js';
+import { Mode, getCacheStoreModule } from './mode.js';
+import Utils from './generalUtils.js';
 
 // Compaction schema 
 // The on-disk format uses short keys and arrays instead of verbose field names.
@@ -166,23 +168,28 @@ function estimateBytes(obj) {
     try { return JSON.stringify(obj).length; } catch { return 0; }
 }
 
-function writeCacheIndex(idx) {
-    try { storeSet(STORE_MODULES.cache, STORE_KEYS.cacheIndex, { ...idx, v: CACHE_VERSION }); } catch {}
+function getCacheModule(mode) {
+    return getCacheStoreModule(mode);
 }
 
-function evictUntilFits(idx, neededBytes) {
+function writeCacheIndex(idx, mode) {
+    const mod = getCacheModule(mode);
+    try { storeSet(mod, STORE_KEYS.cacheIndex, { ...idx, v: CACHE_VERSION }); } catch {}
+}
+
+function evictUntilFits(idx, neededBytes, mode) {
     while (idx.puuids.length >= MAX_CACHED_PUUIDS) {
         const evictPuuid = idx.puuids.shift();
-        const evictEntry = readCacheEntry(evictPuuid);
+        const evictEntry = readCacheEntry(evictPuuid, mode);
         const evictBytes = evictEntry ? estimateBytes(evictEntry) : 0;
-        try { storeRemove(STORE_MODULES.cache, `entry:${evictPuuid}`); } catch {}
+        try { storeRemove(getCacheModule(mode), `entry:${evictPuuid}`); } catch {}
         idx.totalBytes = Math.max(0, idx.totalBytes - evictBytes);
     }
     while (idx.puuids.length > 0 && (idx.totalBytes + neededBytes) > MAX_TOTAL_BYTES) {
         const evictPuuid = idx.puuids.shift();
-        const evictEntry = readCacheEntry(evictPuuid);
+        const evictEntry = readCacheEntry(evictPuuid, mode);
         const evictBytes = evictEntry ? estimateBytes(evictEntry) : 0;
-        try { storeRemove(STORE_MODULES.cache, `entry:${evictPuuid}`); } catch {}
+        try { storeRemove(getCacheModule(mode), `entry:${evictPuuid}`); } catch {}
         idx.totalBytes = Math.max(0, idx.totalBytes - evictBytes);
     }
     return idx;
@@ -190,7 +197,7 @@ function evictUntilFits(idx, neededBytes) {
 
 // Cache versioning 
 // Bump this any time the on-disk schema changes in a breaking way. (Broken v1 already eksdee)
-// On mismatch, all entries are wiped and a fresh index is written —
+// On mismatch, all entries are wiped and a fresh index is written -
 // analysis.js sees null from readCacheEntry and does a normal full fetch.
 const CACHE_VERSION = 2;
 
@@ -198,25 +205,25 @@ function freshIndex() {
     return { v: CACHE_VERSION, puuids: [], totalBytes: 0 };
 }
 
-function wipeAllEntries(idx) {
+function wipeAllEntries(idx, mode) {
+    const mod = getCacheModule(mode);
     (idx.puuids || []).forEach(puuid => {
-        try { storeRemove(STORE_MODULES.cache, `entry:${puuid}`); } catch {}
+        try { storeRemove(mod, `entry:${puuid}`); } catch {}
     });
 }
 
 // Public API 
-export function readCacheIndex() {
+export function readCacheIndex(mode = Mode.OFFICIAL) {
+    const mod = getCacheModule(mode);
     try {
-        const idx = storeGet(STORE_MODULES.cache, STORE_KEYS.cacheIndex);
+        const idx = storeGet(mod, STORE_KEYS.cacheIndex);
         if (!idx || !Array.isArray(idx.puuids)) return freshIndex();
 
         if ((idx.v || 1) < CACHE_VERSION) {
-            // Schema changed, wipe stale entries and start clean.
-            // analysis.js will do a normal full fetch for any player it looks up.
-            console.log(`[MD-Cache] Schema v${idx.v || 1} → v${CACHE_VERSION}: wiping stale cache`);
-            wipeAllEntries(idx);
+            Utils.Debug.log(`[MD-Cache] Schema v${idx.v || 1} → v${CACHE_VERSION}: wiping stale cache`);
+            wipeAllEntries(idx, mode);
             const clean = freshIndex();
-            writeCacheIndex(clean);
+            writeCacheIndex(clean, mode);
             return clean;
         }
 
@@ -225,9 +232,10 @@ export function readCacheIndex() {
     return freshIndex();
 }
 
-export function readCacheEntry(puuid) {
+export function readCacheEntry(puuid, mode = Mode.OFFICIAL) {
+    const mod = getCacheModule(mode);
     try {
-        const entry = storeGet(STORE_MODULES.cache, `entry:${puuid}`);
+        const entry = storeGet(mod, `entry:${puuid}`);
         if (entry && typeof entry.newestGameCreation === 'number' && Array.isArray(entry.history)) {
             return { ...entry, history: entry.history.map(unpackHistoryEntry) };
         }
@@ -235,7 +243,8 @@ export function readCacheEntry(puuid) {
     return null;
 }
 
-export function saveCacheEntry(puuid, history, oldestStartIndex) {
+export function saveCacheEntry(puuid, history, oldestStartIndex, mode = Mode.OFFICIAL) {
+    const mod = getCacheModule(mode);
     try {
         if (!history || history.length === 0) return;
         const entry = {
@@ -247,33 +256,34 @@ export function saveCacheEntry(puuid, history, oldestStartIndex) {
         };
         const entryBytes = estimateBytes(entry);
         if (entryBytes > MAX_BYTES_PER_PUUID) {
-            console.warn(`[MD-Cache] Entry for ${puuid} exceeds per-PUUID limit — not caching`);
+            Utils.Debug.warn(`[MD-Cache] Entry for ${puuid} exceeds per-PUUID limit - not caching`);
             return;
         }
-        let idx = readCacheIndex();
+        let idx = readCacheIndex(mode);
         const existingPos = idx.puuids.indexOf(puuid);
         if (existingPos !== -1) {
-            const oldEntry = readCacheEntry(puuid);
+            const oldEntry = readCacheEntry(puuid, mode);
             idx.totalBytes = Math.max(0, idx.totalBytes - (oldEntry ? estimateBytes(oldEntry) : 0));
             idx.puuids.splice(existingPos, 1);
         }
-        idx = evictUntilFits(idx, entryBytes);
-        const ok = storeSet(STORE_MODULES.cache, `entry:${puuid}`, entry);
+        idx = evictUntilFits(idx, entryBytes, mode);
+        const ok = storeSet(mod, `entry:${puuid}`, entry);
         if (!ok) return;
         idx.puuids.push(puuid);
         idx.totalBytes += entryBytes;
-        writeCacheIndex(idx);
+        writeCacheIndex(idx, mode);
     } catch (e) {
-        console.error('[MD-Cache] saveCacheEntry failed:', e);
+        Utils.Debug.error('[MD-Cache] saveCacheEntry failed:', e);
     }
 }
 
 /** Wipes every cached entry and the index. Returns number of PUUIDs cleared. */
-export function clearAllCache() {
-    const idx = readCacheIndex();
+export function clearAllCache(mode = Mode.OFFICIAL) {
+    const mod = getCacheModule(mode);
+    const idx = readCacheIndex(mode);
     idx.puuids.forEach(puuid => {
-        try { storeRemove(STORE_MODULES.cache, `entry:${puuid}`); } catch {}
+        try { storeRemove(mod, `entry:${puuid}`); } catch {}
     });
-    try { storeRemove(STORE_MODULES.cache, STORE_KEYS.cacheIndex); } catch {}
+    try { storeRemove(mod, STORE_KEYS.cacheIndex); } catch {}
     return idx.puuids.length;
 }

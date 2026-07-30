@@ -1,16 +1,3 @@
-/**
- * Shared Store layer for the global champion data aggregation system.
- *
- * Storage layout (Store mode - default):
- *   mayhemDoctorGlobal.stats -> packed aggregated champion stats
- *   mayhemDoctorGlobal.crawl -> resumable crawl state (queue, visited, processedGameIds)
- *
- * Storage layout (file cache mode — useFileGlobalCache setting):
- *   global stats are kept out of DataStore entirely. On startup they are fetched
- *   from https://plugins/Mayhem-Doctor/data/md-global-stats.json. After a crawl
- *   the user saves it via file picker. Store only holds the crawl state.
- */
-
 import { readCacheIndex, readCacheEntry } from './cache.js';
 import { toPatchLabel } from './ui/patchFilter.js';
 import { STORE_KEYS, STORE_MODULES, storeGet, storeRemove, storeSet } from './store.js';
@@ -19,54 +6,53 @@ import {
     readGlobalStatsFromFile,
     markGlobalStatsDirty,
 } from './fileCache.js';
+import { Mode, getCacheStoreModule, getGlobalStoreModule } from './mode.js';
+import Utils from './generalUtils.js';
 
 const STATS_VERSION = 1;
 const CRAWL_VERSION = 1;
 
-let _globalStatsCache = null;
-let _rawGlobalStatsCache = null;
-let _pendingCrawlState = null;
+const _globalStatsCache = {};
+const _rawGlobalStatsCache = {};
+const _pendingCrawlState = {};
+
+function getGlobalMod(mode) {
+    return getGlobalStoreModule(mode);
+}
 
 /**
  * Called from index.js after loadSettings() and initResolver().
- * Tries to load global stats from the plugin data file into the raw cache so
- * all subsequent synchronous reads hit memory, not Store.
- * No-op if useFileGlobalCache is disabled or the file does not exist yet.
  */
-export async function initGlobalFileCache() {
+export async function initGlobalFileCache(mode = Mode.OFFICIAL) {
     if (!isFileCacheEnabled()) return;
-    const raw = await readGlobalStatsFromFile();
+    const raw = await readGlobalStatsFromFile(mode);
     if (raw) {
-        _rawGlobalStatsCache = raw;
-        _globalStatsCache    = null;
-        // Store entry is kept intact. The explicit "Migrate" button will remove it.
-        console.log('[MD-GlobalCache] File cache active — loaded md-global-stats from file');
+        _rawGlobalStatsCache[mode] = raw;
+        _globalStatsCache[mode] = null;
+        Utils.Debug.log(`[MD-GlobalCache] File cache active - loaded ${mode} global stats from file`);
     }
 }
 
-function getRawGlobalStats() {
-    if (_rawGlobalStatsCache) return _rawGlobalStatsCache;
+function getRawGlobalStats(mode) {
+    if (_rawGlobalStatsCache[mode]) return _rawGlobalStatsCache[mode];
 
-    // File cache mode: initGlobalFileCache() should have populated _rawGlobalStatsCache
-    // at startup. If it didn't (file not found yet), return empty rather than
-    // falling through to Store - the stats blob may not be there anyway.
     if (isFileCacheEnabled()) {
-        _rawGlobalStatsCache = { v: STATS_VERSION, savedAt: Date.now(), patch: null, totalGames: 0, visitedCount: 0, seenPatches: [], champions: {} };
-        return _rawGlobalStatsCache;
+        _rawGlobalStatsCache[mode] = { v: STATS_VERSION, savedAt: Date.now(), patch: null, totalGames: 0, visitedCount: 0, seenPatches: [], champions: {} };
+        return _rawGlobalStatsCache[mode];
     }
 
     try {
-        const raw = storeGet(STORE_MODULES.global, STORE_KEYS.globalStats);
+        const raw = storeGet(getGlobalMod(mode), STORE_KEYS.globalStats);
         if (raw) {
-            _rawGlobalStatsCache = raw;
+            _rawGlobalStatsCache[mode] = raw;
         } else {
-            _rawGlobalStatsCache = { v: STATS_VERSION, savedAt: Date.now(), patch: null, totalGames: 0, visitedCount: 0, seenPatches: [], champions: {} };
+            _rawGlobalStatsCache[mode] = { v: STATS_VERSION, savedAt: Date.now(), patch: null, totalGames: 0, visitedCount: 0, seenPatches: [], champions: {} };
         }
     } catch (e) {
-        console.error('[MD-GlobalCache] getRawGlobalStats failed:', e);
-        _rawGlobalStatsCache = { v: STATS_VERSION, savedAt: Date.now(), patch: null, totalGames: 0, visitedCount: 0, seenPatches: [], champions: {} };
+        Utils.Debug.error('[MD-GlobalCache] getRawGlobalStats failed:', e);
+        _rawGlobalStatsCache[mode] = { v: STATS_VERSION, savedAt: Date.now(), patch: null, totalGames: 0, visitedCount: 0, seenPatches: [], champions: {} };
     }
-    return _rawGlobalStatsCache;
+    return _rawGlobalStatsCache[mode];
 }
 
 function packChampStats(s) {
@@ -74,7 +60,6 @@ function packChampStats(s) {
 }
 
 function packGameRecord(g) {
-    // [0]=win [1]=items [2]=augments [3]=orderedBuild [4]=gameCreation (optional, absent in legacy records)
     const rec = [g.win ? 1 : 0, g.items, g.augments, g.orderedBuild];
     if (g.gameCreation != null) rec.push(g.gameCreation);
     return rec;
@@ -102,8 +87,6 @@ function unpackChampEntry(champId, entry) {
         const items = rec[1] || [];
         const augments = rec[2] || [];
         const orderedBuild = rec[3] || [];
-        // rec[4] = gameCreation timestamp — present in records written after this change,
-        // null for legacy records. Consumers must treat null as unknown, not as a duplicate key.
         const gameCreation = rec[4] ?? null;
 
         champGames.push({ win, items, augments, orderedBuild, gameCreation });
@@ -124,11 +107,11 @@ function unpackChampEntry(champId, entry) {
     return { cKey, stats, champGames, champItemStats, champAugStats };
 }
 
-export function readGlobalStats() {
-    if (_globalStatsCache) return _globalStatsCache;
+export function readGlobalStats(mode = Mode.OFFICIAL) {
+    if (_globalStatsCache[mode]) return _globalStatsCache[mode];
 
     try {
-        const raw = getRawGlobalStats();
+        const raw = getRawGlobalStats(mode);
         if (!raw || raw.totalGames === 0) return null;
 
         const stats = { wins: 0, losses: 0, remakes: 0, champions: {}, items: {}, augments: {} };
@@ -158,27 +141,23 @@ export function readGlobalStats() {
             }
         }
 
-        _globalStatsCache = { stats, champGames, champItemStats, champAugStats, meta: { patch: raw.patch || null, totalGames: raw.totalGames || 0, visitedCount: raw.visitedCount || 0, savedAt: raw.savedAt || null, seenPatches: raw.seenPatches || [] } };
-        
-        // Raw cache is no longer needed in Store mode - the unpacked form is in _globalStatsCache
-        // and the data is on disk. Releasing it here prevents both caches coexisting.
-        // HOWEVER, in File Cache mode, the raw cache is our ONLY in-memory representation
-        // to write back to the disk file! If we destroy it, saving will write an empty object.
+        _globalStatsCache[mode] = { stats, champGames, champItemStats, champAugStats, meta: { patch: raw.patch || null, totalGames: raw.totalGames || 0, visitedCount: raw.visitedCount || 0, savedAt: raw.savedAt || null, seenPatches: raw.seenPatches || [] } };
+
         if (!isFileCacheEnabled()) {
-            _rawGlobalStatsCache = null;
+            _rawGlobalStatsCache[mode] = null;
         }
-        
-        return _globalStatsCache;
+
+        return _globalStatsCache[mode];
     } catch (e) {
-        console.error('[MD-GlobalCache] readGlobalStats failed:', e);
+        Utils.Debug.error('[MD-GlobalCache] readGlobalStats failed:', e);
         return null;
     }
 }
 
-export function saveGlobalStats(data) {
-    _globalStatsCache = null;
+export function saveGlobalStats(data, mode = Mode.OFFICIAL) {
+    _globalStatsCache[mode] = null;
     try {
-        const existing = getRawGlobalStats() || {};
+        const existing = getRawGlobalStats(mode) || {};
         const packed = {
             v: STATS_VERSION,
             savedAt: Date.now(),
@@ -195,11 +174,11 @@ export function saveGlobalStats(data) {
         for (const [champId, entry] of Object.entries(data.champions)) {
             const existingG = (existing.champions && existing.champions[champId] && existing.champions[champId].g) || [];
             const newPacked = (entry.g || []).map(packGameRecord);
-            
+
             const combinedG = [];
             for (let i = 0; i < existingG.length; i++) combinedG.push(existingG[i]);
             for (let i = 0; i < newPacked.length; i++) combinedG.push(newPacked[i]);
-            
+
             packed.champions[champId] = {
                 s: packChampStats(entry.s),
                 g: combinedG,
@@ -213,37 +192,37 @@ export function saveGlobalStats(data) {
             }
         }
 
-        _rawGlobalStatsCache = packed;
+        _rawGlobalStatsCache[mode] = packed;
         if (isFileCacheEnabled()) {
             markGlobalStatsDirty();
         } else {
-            storeSet(STORE_MODULES.global, STORE_KEYS.globalStats, packed);
+            storeSet(getGlobalMod(mode), STORE_KEYS.globalStats, packed);
         }
     } catch (e) {
-        console.error('[MD-GlobalCache] saveGlobalStats failed:', e);
+        Utils.Debug.error('[MD-GlobalCache] saveGlobalStats failed:', e);
     }
 }
 
-export function clearGlobalStats() {
-    _globalStatsCache    = null;
-    if (isFileCacheEnabled() && _rawGlobalStatsCache) {
-        _rawGlobalStatsCache = { v: STATS_VERSION, savedAt: Date.now(), patch: null, totalGames: 0, visitedCount: 0, seenPatches: [], champions: {}, crawl: _rawGlobalStatsCache.crawl };
+export function clearGlobalStats(mode = Mode.OFFICIAL) {
+    _globalStatsCache[mode] = null;
+    if (isFileCacheEnabled() && _rawGlobalStatsCache[mode]) {
+        _rawGlobalStatsCache[mode] = { v: STATS_VERSION, savedAt: Date.now(), patch: null, totalGames: 0, visitedCount: 0, seenPatches: [], champions: {}, crawl: _rawGlobalStatsCache[mode].crawl };
         markGlobalStatsDirty();
     } else {
-        _rawGlobalStatsCache = null;
+        _rawGlobalStatsCache[mode] = null;
     }
     try {
-        storeRemove(STORE_MODULES.global, STORE_KEYS.globalStats);
+        storeRemove(getGlobalMod(mode), STORE_KEYS.globalStats);
     } catch {}
 }
 
-export function clearGlobalStatsCache() {
-    _globalStatsCache = null;
+export function clearGlobalStatsCache(mode = Mode.OFFICIAL) {
+    _globalStatsCache[mode] = null;
 }
 
-export function readCrawlState() {
+export function readCrawlState(mode = Mode.OFFICIAL) {
     if (isFileCacheEnabled()) {
-        const raw = getRawGlobalStats();
+        const raw = getRawGlobalStats(mode);
         if (!raw || !raw.crawl || (raw.crawl.v || 0) < CRAWL_VERSION) return null;
         return {
             patch: raw.crawl.patch || null,
@@ -257,7 +236,7 @@ export function readCrawlState() {
     }
 
     try {
-        const raw = storeGet(STORE_MODULES.global, STORE_KEYS.globalCrawl);
+        const raw = storeGet(getGlobalMod(mode), STORE_KEYS.globalCrawl);
         if (!raw || (raw.v || 0) < CRAWL_VERSION) return null;
         return {
             patch: raw.patch || null,
@@ -273,7 +252,7 @@ export function readCrawlState() {
     }
 }
 
-export function saveCrawlState(state) {
+export function saveCrawlState(state, mode = Mode.OFFICIAL) {
     const packed = {
         v: CRAWL_VERSION,
         patch: state.patch || null,
@@ -285,86 +264,66 @@ export function saveCrawlState(state) {
         startedAt: state.startedAt,
     };
 
-    // Both modes: keep crawl state in memory only during the crawl.
-    // Store writes trigger a full DataStore JSON.stringify + XOR + file write
-    // on every call — even if our data is small, other plugins' data in the
-    // store makes this expensive.  We defer the single DataStore commit to
-    // commitCrawlState(), called once at crawl end.
-    _pendingCrawlState = packed;
+    _pendingCrawlState[mode] = packed;
 
     if (isFileCacheEnabled()) {
-        const raw = getRawGlobalStats();
+        const raw = getRawGlobalStats(mode);
         if (raw) {
             raw.crawl = packed;
         }
     }
 }
 
-/**
- * Flush the in-memory crawl state to persistent storage (Store or file).
- * Called once at crawl end — keeps the expensive serialisation to a single commit.
- */
-export function commitCrawlState() {
-    if (!_pendingCrawlState) return;
+export function commitCrawlState(mode = Mode.OFFICIAL) {
+    if (!_pendingCrawlState[mode]) return;
 
     if (isFileCacheEnabled()) {
-        // Already embedded in _rawGlobalStatsCache.crawl by saveCrawlState().
-        // markGlobalStatsDirty() is handled by writeFinalCrawlStats() which
-        // is always called alongside commitCrawlState().
     } else {
         try {
-            storeSet(STORE_MODULES.global, STORE_KEYS.globalCrawl, _pendingCrawlState);
+            storeSet(getGlobalMod(mode), STORE_KEYS.globalCrawl, _pendingCrawlState[mode]);
         } catch (e) {
-            console.error('[MD-GlobalCache] commitCrawlState failed:', e);
+            Utils.Debug.error('[MD-GlobalCache] commitCrawlState failed:', e);
         }
     }
-    _pendingCrawlState = null;
+    _pendingCrawlState[mode] = null;
 }
 
-export function clearCrawlState() {
+export function clearCrawlState(mode = Mode.OFFICIAL) {
     if (isFileCacheEnabled()) {
-        const raw = getRawGlobalStats();
+        const raw = getRawGlobalStats(mode);
         if (raw && raw.crawl) {
             delete raw.crawl;
             markGlobalStatsDirty();
         }
     } else {
-        try { storeRemove(STORE_MODULES.global, STORE_KEYS.globalCrawl); } catch {}
+        try { storeRemove(getGlobalMod(mode), STORE_KEYS.globalCrawl); } catch {}
     }
 }
 
-export function clearAllGlobalData() {
-    const hadStats = storeGet(STORE_MODULES.global, STORE_KEYS.globalStats) != null;
-    clearGlobalStats();
-    clearCrawlState();
+export function clearAllGlobalData(mode = Mode.OFFICIAL) {
+    const hadStats = storeGet(getGlobalMod(mode), STORE_KEYS.globalStats) != null;
+    clearGlobalStats(mode);
+    clearCrawlState(mode);
     return hadStats;
 }
 
-export function readRawGlobalStats() {
-    return getRawGlobalStats();
+export function readRawGlobalStats(mode = Mode.OFFICIAL) {
+    return getRawGlobalStats(mode);
 }
 
-/**
- * Repair persisted global stats totals using the resumable crawl state.
- * This corrects inflated `totalGames` / `visitedCount` values by taking the
- * authoritative counts from the crawl state (`md-global-crawl`).
- *
- * Returns a summary object { before: { totalGames, visitedCount }, after: { ... } }
- */
-export function repairGlobalStatsFromCrawl() {
+export function repairGlobalStatsFromCrawl(mode = Mode.OFFICIAL) {
     try {
-        const raw = getRawGlobalStats();
+        const raw = getRawGlobalStats(mode);
         const crawl = (function() {
-            try { return storeGet(STORE_MODULES.global, STORE_KEYS.globalCrawl); } catch { return null; }
+            try { return storeGet(getGlobalMod(mode), STORE_KEYS.globalCrawl); } catch { return null; }
         })();
 
         const before = { totalGames: raw.totalGames || 0, visitedCount: raw.visitedCount || 0 };
 
         if (!crawl) {
-            return { ok: false, error: 'No crawl state found (md-global-crawl).' , before };
+            return { ok: false, error: 'No crawl state found.', before };
         }
 
-        // crawl.processedGameIds may be an array of timestamps; prefer crawl.totalGames if present
         const correctedTotal = typeof crawl.totalGames === 'number' ? crawl.totalGames : (Array.isArray(crawl.processedGameIds) ? crawl.processedGameIds.length : (crawl.processedGameIds ? (typeof crawl.processedGameIds.size === 'number' ? crawl.processedGameIds.size : 0) : 0));
         const correctedVisited = Array.isArray(crawl.visited) ? crawl.visited.length : (crawl.visited ? (typeof crawl.visited.length === 'number' ? crawl.visited.length : (typeof crawl.visited.size === 'number' ? crawl.visited.size : 0)) : 0);
 
@@ -373,13 +332,13 @@ export function repairGlobalStatsFromCrawl() {
         raw.savedAt      = Date.now();
 
         if (isFileCacheEnabled()) {
-            _globalStatsCache    = null;
-            _rawGlobalStatsCache = raw;
+            _globalStatsCache[mode] = null;
+            _rawGlobalStatsCache[mode] = raw;
             markGlobalStatsDirty();
         } else {
-            try { storeSet(STORE_MODULES.global, STORE_KEYS.globalStats, raw); } catch (e) { return { ok: false, error: e.message, before }; }
-            _globalStatsCache    = null;
-            _rawGlobalStatsCache = raw;
+            try { storeSet(getGlobalMod(mode), STORE_KEYS.globalStats, raw); } catch (e) { return { ok: false, error: e.message, before }; }
+            _globalStatsCache[mode] = null;
+            _rawGlobalStatsCache[mode] = raw;
         }
 
         return { ok: true, before, after: { totalGames: raw.totalGames, visitedCount: raw.visitedCount } };
@@ -388,19 +347,11 @@ export function repairGlobalStatsFromCrawl() {
     }
 }
 
-// Expose a quick repair helper on window for convenience in DevTools.
 try { if (typeof window !== 'undefined') window.__mdRepairGlobalStatsFromCrawl = repairGlobalStatsFromCrawl; } catch (e) {}
 
-/**
- * Remove all g[] game records from the persisted stats, keeping s[] intact.
- * Returns a map { champId: g[] } of the stripped records so the caller can
- * hold them in memory and write them back at the end of a crawl.
- * This keeps the Store payload small during crawling, preventing the repeated
- * 20-60 MB JSON serialisation cycles that cause V8 heap fragmentation.
- */
-export function stripGameRecordsFromStore() {
+export function stripGameRecordsFromStore(mode = Mode.OFFICIAL) {
     try {
-        const raw = getRawGlobalStats();
+        const raw = getRawGlobalStats(mode);
         const stripped = {};
         for (const [champId, entry] of Object.entries(raw.champions || {})) {
             if (entry.g && entry.g.length > 0) {
@@ -409,31 +360,17 @@ export function stripGameRecordsFromStore() {
             }
         }
         raw.savedAt = Date.now();
-        // In-memory only - no Store write here.  writeFinalCrawlStats()
-        // replaces the entire blob at crawl end in a single commit.
-        _rawGlobalStatsCache = raw;
+        _rawGlobalStatsCache[mode] = raw;
         return stripped;
     } catch (e) {
-        console.error('[MD-GlobalCache] stripGameRecordsFromStore failed:', e);
+        Utils.Debug.error('[MD-GlobalCache] stripGameRecordsFromStore failed:', e);
         return {};
     }
 }
 
-/**
- * Write the complete final crawl results to Store in a single operation.
- * Called once at crawl end with the full accumulator (s[] stats) and game
- * buffer (g[] records).  This completely replaces the md-global-stats blob.
- *
- * @param {Object} opts
- * @param {Object} opts.champions  - { champId: { s: {games,wins,kills,deaths,assists,dmg}, g:[] } }
- * @param {Object} opts.gameRecords - { champId: [ [win,items,augs,build,gameCreation], ... ] }
- * @param {string} opts.patch
- * @param {number} opts.totalGames
- * @param {number} opts.visitedCount
- */
-export function writeFinalCrawlStats({ champions, gameRecords, patch, totalGames, visitedCount, seenPatches }) {
+export function writeFinalCrawlStats({ champions, gameRecords, patch, totalGames, visitedCount, seenPatches }, mode = Mode.OFFICIAL) {
     try {
-        const existing = getRawGlobalStats() || {};
+        const existing = getRawGlobalStats(mode) || {};
         const packed = {
             v: STATS_VERSION,
             savedAt: Date.now(),
@@ -462,33 +399,33 @@ export function writeFinalCrawlStats({ champions, gameRecords, patch, totalGames
         }
 
         if (isFileCacheEnabled()) {
-            _rawGlobalStatsCache = packed;
-            _globalStatsCache    = null;
+            _rawGlobalStatsCache[mode] = packed;
+            _globalStatsCache[mode] = null;
             markGlobalStatsDirty();
         } else {
-            storeSet(STORE_MODULES.global, STORE_KEYS.globalStats, packed);
-            _globalStatsCache    = null;
-            _rawGlobalStatsCache = null;
+            storeSet(getGlobalMod(mode), STORE_KEYS.globalStats, packed);
+            _globalStatsCache[mode] = null;
+            _rawGlobalStatsCache[mode] = null;
         }
     } catch (e) {
-        console.error('[MD-GlobalCache] writeFinalCrawlStats failed:', e);
+        Utils.Debug.error('[MD-GlobalCache] writeFinalCrawlStats failed:', e);
     }
 }
 
-export function getAvailablePatchesFromCache() {
+export function getAvailablePatchesFromCache(mode = Mode.OFFICIAL) {
     try {
-        const idx = readCacheIndex();
+        const idx = readCacheIndex(mode);
         const patchSet = new Set();
         for (const puuid of idx.puuids) {
-            const entry = readCacheEntry(puuid);
+            const entry = readCacheEntry(puuid, mode);
             if (!entry) continue;
             for (const h of entry.history) {
                 const label = toPatchLabel(h.gameVersion || '');
                 if (label && label !== 'Unknown') patchSet.add(label);
             }
         }
-        
-        const raw = getRawGlobalStats();
+
+        const raw = getRawGlobalStats(mode);
         if (raw) {
             if (raw.seenPatches) {
                 raw.seenPatches.forEach(p => patchSet.add(p));
@@ -497,7 +434,7 @@ export function getAvailablePatchesFromCache() {
                 raw.crawl.seenPatches.forEach(p => patchSet.add(p));
             }
         }
-        
+
         return [...patchSet].sort((a, b) => {
             const [aMaj, aMin] = a.split('.').map(Number);
             const [bMaj, bMin] = b.split('.').map(Number);
@@ -508,10 +445,10 @@ export function getAvailablePatchesFromCache() {
     }
 }
 
-export async function reloadCacheMode(fileModeEnabled) {
-    _globalStatsCache = null;
-    _rawGlobalStatsCache = null;
+export async function reloadCacheMode(fileModeEnabled, mode = Mode.OFFICIAL) {
+    _globalStatsCache[mode] = null;
+    _rawGlobalStatsCache[mode] = null;
     if (fileModeEnabled) {
-        await initGlobalFileCache();
+        await initGlobalFileCache(mode);
     }
 }

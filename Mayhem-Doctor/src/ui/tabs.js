@@ -35,6 +35,8 @@ import {
   cancelCrawl,
   isCrawlRunning,
 } from "./crawler.js";
+import { Mode } from '../mode.js';
+import Utils from '../generalUtils.js';
 
 // Champion name fuzzy matching
 function normaliseChampName(name) {
@@ -63,7 +65,7 @@ window.__mdToggleCrawl = (val) => {
       }
   });
   
-  console.log(`[Mayhem-Doctor] Global Crawl manually set to: ${target}`);
+  Utils.Debug.log(`[Mayhem-Doctor] Global Crawl manually set to: ${target}`);
 };
 
 // Secret sequence state
@@ -406,7 +408,7 @@ function buildChampDetailView(
         : "aram-winrate";
   const kdaVal = ((c.kills + c.assists) / Math.max(1, c.deaths)).toFixed(2);
   const avgDmg =
-    totalGames > 0 ? Math.round(c.dmg / totalGames).toLocaleString() : "—";
+    totalGames > 0 ? Math.round(c.dmg / totalGames).toLocaleString() : "-";
 
   const controls = document.createElement("div");
   controls.className = "sc-detail-controls";
@@ -440,7 +442,7 @@ function buildChampDetailView(
         <div class="sc-detail-title">
             <div class="sc-detail-champ-name">${c.name}</div>
             <div class="sc-detail-stats">
-                <span class="aram-win-high">${c.wins}W</span> <span class="aram-dash"> — </span> <span class="aram-win-low">${c.losses}L</span>
+                <span class="aram-win-high">${c.wins}W</span> <span class="aram-dash"> - </span> <span class="aram-win-low">${c.losses}L</span>
                 <span class="aram-dash"> &bull; </span> <span class="${wrClass}">${wr}% WR (Laplace smoothing)</span> <span class="aram-dash"> &bull; </span>
                 <span class="sc-total-games">${totalGames} Total Game${totalGames !== 1 ? "s" : ""}</span> <span class="aram-dash"> &bull; </span>
                 <span class="sc-kda-label">KDA: <b>${kdaVal}</b></span> <span class="aram-dash"> &bull; </span>
@@ -522,7 +524,7 @@ export function renderSpecificChampionsTab(stats, fullHistory, onChampClick) {
 }
 
 // Global Champions tab (all participants aggregated)
-export function renderGlobalChampionsTab(fullHistory, excludedPatches, onChampClick, clientPatch) {
+export function renderGlobalChampionsTab(fullHistory, excludedPatches, onChampClick, clientPatch, mode = Mode.OFFICIAL) {
   const root = document.createElement("div");
   root.className = "sc-root";
 
@@ -569,7 +571,7 @@ export function renderGlobalChampionsTab(fullHistory, excludedPatches, onChampCl
   noPatchOpt.textContent = "All patches";
   patchSelect.appendChild(noPatchOpt);
 
-  const availablePatches = getAvailablePatchesFromCache();
+  const availablePatches = getAvailablePatchesFromCache(mode);
   
   // Inject current client patch if it's new
   if (clientPatch && clientPatch !== 'Unknown' && !availablePatches.includes(clientPatch)) {
@@ -589,7 +591,7 @@ export function renderGlobalChampionsTab(fullHistory, excludedPatches, onChampCl
   }
 
   // Pre-select patch from existing crawl state if any
-  const existingCrawlState = readCrawlState();
+  const existingCrawlState = readCrawlState(mode);
   if (existingCrawlState?.patch) {
     patchSelect.value = existingCrawlState.patch || "";
   } else if (clientPatch && availablePatches.includes(clientPatch)) {
@@ -630,7 +632,7 @@ export function renderGlobalChampionsTab(fullHistory, excludedPatches, onChampCl
   root.appendChild(panel);
   root.appendChild(gridContainer);
 
-  // Computed once at construction — reused on every personal-mode toggle
+  // Computed once at construction - reused on every personal-mode toggle
   const personalFallback = buildGlobalStats(fullHistory);
 
   // Render helpers 
@@ -683,9 +685,10 @@ export function renderGlobalChampionsTab(fullHistory, excludedPatches, onChampCl
     startBtn.classList.remove("gc-crawl-btn-cancel");
     patchSelect.disabled = false;
 
-    const globalData = readGlobalStats();
-    const crawlState = readCrawlState();
-    const useCrawl = window.__mdGlobalSource !== "personal" && !!globalData;
+    const globalData = readGlobalStats(mode);
+    const crawlState = readCrawlState(mode);
+    const sourceKey = `__mdGlobalSource_${mode}`;
+    const useCrawl = (window[sourceKey] || "crawl") !== "personal" && !!globalData;
 
     if (useCrawl) {
       const { meta } = globalData;
@@ -694,7 +697,7 @@ export function renderGlobalChampionsTab(fullHistory, excludedPatches, onChampCl
       const patch = meta.patch ? ` · Patch ${meta.patch}` : "";
       statusNote.innerHTML =
         `<span class="gc-status-source gc-status-crawl">Crawl data</span>` +
-        ` — ${meta.totalGames.toLocaleString()} games · ${meta.visitedCount} players · ${champCount} champions${patch} · saved ${date}`;
+        ` - ${meta.totalGames.toLocaleString()} games · ${meta.visitedCount} players · ${champCount} champions${patch} · saved ${date}`;
 
       const hasResumable = crawlState &&
         (crawlState.queue.length > 0 || crawlState.totalGames < getSettings().crawlTargetGames);
@@ -702,7 +705,7 @@ export function renderGlobalChampionsTab(fullHistory, excludedPatches, onChampCl
     } else {
       statusNote.innerHTML =
         `<span class="gc-status-source gc-status-personal">Personal history</span>` +
-        ` — aggregated from your analyzed games. Run a crawl for larger sample sizes.`;
+        ` - aggregated from your analyzed games. Run a crawl for larger sample sizes.`;
       startBtn.textContent = "Start Crawl";
     }
   }
@@ -762,12 +765,12 @@ export function renderGlobalChampionsTab(fullHistory, excludedPatches, onChampCl
         updateStatusNote();
 
         // Re-render grid from freshly saved crawl data
-        const freshData = readGlobalStats();
+        const freshData = readGlobalStats(mode);
         if (freshData) {
           renderGrid(freshData);
         }
 
-        // If file cache is enabled the data was not written to DataStore —
+        // If file cache is enabled the data was not written to DataStore -
         // prompt the user to save it to the plugin data/ directory.
         const { isGlobalStatsDirty, saveGlobalStatsToFile, getExpectedFilePath } = window.__mdFileCacheRef || {};
         if (isGlobalStatsDirty && isGlobalStatsDirty()) {
@@ -781,18 +784,18 @@ export function renderGlobalChampionsTab(fullHistory, excludedPatches, onChampCl
           
           saveBtn.textContent = "Save?";
           saveBtn.title =
-            "File cache is enabled — save the data file so it loads automatically on next startup.\n" +
-            `Save to: ${getExpectedFilePath ? getExpectedFilePath() : "data/md-global-stats.json"}`;
+            "File cache is enabled - save the data file so it loads automatically on next startup.\n" +
+            `Save to: ${getExpectedFilePath ? getExpectedFilePath(mode) : "data/md-global-stats.json"}`;
 
           saveBtn.onclick = async () => {
             saveBtn.disabled = true;
             saveBtn.textContent = "Saving…";
-            const raw = readRawGlobalStats();
+            const raw = readRawGlobalStats(mode);
             if (!raw) {
               saveBtn.textContent = "No data to save";
               return;
             }
-            const ok = await saveGlobalStatsToFile(raw);
+            const ok = await saveGlobalStatsToFile(raw, mode);
             if (ok) {
               saveBtn.textContent = "Saved";
               if (typeof Toast !== 'undefined') Toast.success("Global stats file saved. Place it in the plugin data/ folder to auto-load on startup.");
@@ -810,13 +813,14 @@ export function renderGlobalChampionsTab(fullHistory, excludedPatches, onChampCl
           progressText.textContent = "";
         }, 5000);
       }
-    });
+    }, mode);
   };
 
   /** Main update logic that chooses what to render */
   function refreshView() {
-    const globalData = readGlobalStats();
-    const useCrawl = window.__mdGlobalSource !== "personal" && !!globalData;
+    const sourceKey = `__mdGlobalSource_${mode}`;
+    const globalData = readGlobalStats(mode);
+    const useCrawl = (window[sourceKey] || "crawl") !== "personal" && !!globalData;
 
     // Update toggle buttons
     if (useCrawl) {
@@ -849,12 +853,13 @@ export function renderGlobalChampionsTab(fullHistory, excludedPatches, onChampCl
     }
   }
 
+  const sourceKey = `__mdGlobalSource_${mode}`;
   crawlBtn.onclick = () => {
-    window.__mdGlobalSource = "crawl";
+    window[sourceKey] = "crawl";
     refreshView();
   };
   personalBtn.onclick = () => {
-    window.__mdGlobalSource = "personal";
+    window[sourceKey] = "personal";
     refreshView();
   };
 
@@ -982,7 +987,7 @@ function buildChampionGridView(
     filtered.forEach((c) => {
       const cell = document.createElement("div");
       cell.className = "sc-champ-cell";
-      cell.title = `${c.name} — ${c.games} game${c.games !== 1 ? "s" : ""}`;
+      cell.title = `${c.name} - ${c.games} game${c.games !== 1 ? "s" : ""}`;
       
       const color = getWRColor(c.winRate, minWR, maxWR);
       cell.innerHTML = `
@@ -1044,6 +1049,8 @@ export async function renderStatsInto(
     onClose = null,
     title = "Mayhem Analysis",
   } = opts;
+  const mode = opts.mode || Mode.OFFICIAL;
+
   const uid = `aram-tabs-${Date.now()}`;
   const doc = targetEl.ownerDocument || document;
 
@@ -1062,7 +1069,7 @@ export async function renderStatsInto(
       clientPatch = toPatchLabel(text.replace(/"/g, '').trim());
     }
   } catch (e) {
-    console.warn("[Mayhem-Doctor] Failed to fetch client patch:", e);
+    Utils.Debug.warn("[Mayhem-Doctor] Failed to fetch client patch:", e);
   }
 
   targetEl.innerHTML = `
@@ -1107,7 +1114,7 @@ export async function renderStatsInto(
   });
 
   // Secret Sequence logic 
-  console.log("[Mayhem-Doctor] Initializing footer secret sequence...");
+  Utils.Debug.log("[Mayhem-Doctor] Initializing footer secret sequence...");
   const footer = doc.createElement("div");
   footer.className = "aram-credits";
 
@@ -1127,8 +1134,8 @@ export async function renderStatsInto(
         
         if (char === expected) {
           _mdSecretIndex++;
-          console.log(`[Mayhem-Doctor] Secret: ${_mdSecretIndex}/${_mdSecretGoal.length}`);
-          
+          Utils.Debug.log(`[Mayhem-Doctor] Secret: ${_mdSecretIndex}/${_mdSecretGoal.length}`);
+
           if (_mdSecretIndex === _mdSecretGoal.length) {
             _mdSecretIndex = 0; // Reset
             const current = getSettings().enableGlobalCrawl;
@@ -1144,7 +1151,7 @@ export async function renderStatsInto(
             if (typeof Toast !== 'undefined') {
                 Toast.success(msg);
             } else {
-                console.log(`[Mayhem-Doctor] ${msg}`);
+                Utils.Debug.log(`[Mayhem-Doctor] ${msg}`);
             }
             
             secretWrap.style.transition = "color 0.2s ease";
@@ -1159,7 +1166,7 @@ export async function renderStatsInto(
           }
         } else {
           if (_mdSecretIndex > 0) {
-              console.log("[Mayhem-Doctor] Secret reset! Expected " + expected + " but got " + char);
+              Utils.Debug.log("[Mayhem-Doctor] Secret reset! Expected " + expected + " but got " + char);
           }
           _mdSecretIndex = 0;
         }
@@ -1239,7 +1246,7 @@ export async function renderStatsInto(
 
     if (globalEl) {
       globalEl.appendChild(
-        renderGlobalChampionsTab(filtered, excluded, handleChampFilter, clientPatch),
+        renderGlobalChampionsTab(filtered, excluded, handleChampFilter, clientPatch, mode),
       );
     }
   }

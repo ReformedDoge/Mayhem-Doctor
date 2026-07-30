@@ -1,3 +1,6 @@
+import { Mode, getValidQueueIds, getQueueId } from './mode.js';
+import Utils from './generalUtils.js';
+
 /**
  * Core pipeline: parse raw SGP games → accumulate stats → fetch with cache
  * expose the two public entry points used by UI.
@@ -50,9 +53,9 @@ export function deriveOrderedBuild(itemSlots, legendaryItemsUsed) {
  * Parses one raw SGP game into a compact history entry for a given PUUID.
  * Returns null if the game is wrong mode or the player isn't found.
  */
-export function parseGame(g, puuid) {
+export function parseGame(g, puuid, mode = Mode.OFFICIAL) {
   const detail = g.json;
-  if (!detail || !VALID_QUEUE_IDS.includes(detail.queueId)) return null;
+  if (!detail || !getValidQueueIds(mode).includes(detail.queueId)) return null;
   const p = detail.participants.find((part) => part.puuid === puuid);
   if (!p) return null;
   const isRemake =
@@ -339,6 +342,7 @@ export async function fetchGamesFromSGP(
   fullHistory,
   startIndex,
   onProgress,
+  mode = Mode.OFFICIAL,
 ) {
   const BATCH_SIZE = 20;
   const MAX_EMPTY_BATCHES = 5;
@@ -350,7 +354,8 @@ export async function fetchGamesFromSGP(
     onProgress({
       status: `Fetching batch ${Math.floor(currentStartIndex / BATCH_SIZE) + 1}… Found ${fullHistory.length}/${requestedCount}`,
     });
-    const url = `${sgpServer}/match-history-query/v1/products/lol/player/${puuid}/SUMMARY?startIndex=${currentStartIndex}&count=${BATCH_SIZE}`;
+    const tag = `q_${getQueueId(mode)}`;
+    const url = `${sgpServer}/match-history-query/v1/products/lol/player/${puuid}/SUMMARY?startIndex=${currentStartIndex}&count=${BATCH_SIZE}&tag=${tag}`;
     const response = await fetch(url, {
       headers: { Authorization: `Bearer ${rsoToken}` },
     });
@@ -362,7 +367,7 @@ export async function fetchGamesFromSGP(
     let foundValidInBatch = false;
     for (const g of batch) {
       if (fullHistory.length >= requestedCount) break;
-      const entry = parseGame(g, puuid);
+      const entry = parseGame(g, puuid, mode);
       if (!entry) continue;
       fullHistory.push(entry);
       foundValidInBatch = true;
@@ -385,6 +390,7 @@ export async function runAnalysis(
   sgpServer,
   rsoToken,
   onProgress,
+  mode = Mode.OFFICIAL,
 ) {
   const stats = {
     wins: 0,
@@ -397,7 +403,7 @@ export async function runAnalysis(
   const BATCH_SIZE = 20;
   const MAX_PROBE_BATCHES = 5;
 
-  const cachedEntry = readCacheEntry(puuid);
+  const cachedEntry = readCacheEntry(puuid, mode);
 
   if (!cachedEntry) {
     const result = await fetchGamesFromSGP(
@@ -408,11 +414,12 @@ export async function runAnalysis(
       [],
       0,
       onProgress,
+      mode,
     );
     const fullHistory = result.history;
     fullHistory.forEach((e) => accumulateStats(stats, e));
     if (fullHistory.length > 0)
-      saveCacheEntry(puuid, fullHistory, result.oldestStartIndex);
+      saveCacheEntry(puuid, fullHistory, result.oldestStartIndex, mode);
     onProgress({ finalStats: stats, fullHistory });
     return;
   }
@@ -422,7 +429,8 @@ export async function runAnalysis(
   let probeBatches = 0;
   let foundBoundary = false;
   while (probeBatches < MAX_PROBE_BATCHES && !foundBoundary) {
-    const url = `${sgpServer}/match-history-query/v1/products/lol/player/${puuid}/SUMMARY?startIndex=${probeStartIndex}&count=${BATCH_SIZE}`;
+    const tag = `q_${getQueueId(mode)}`;
+    const url = `${sgpServer}/match-history-query/v1/products/lol/player/${puuid}/SUMMARY?startIndex=${probeStartIndex}&count=${BATCH_SIZE}&tag=${tag}`;
     const response = await fetch(url, {
       headers: { Authorization: `Bearer ${rsoToken}` },
     });
@@ -431,7 +439,7 @@ export async function runAnalysis(
     const batch = data.games || [];
     if (batch.length === 0) break;
     for (const g of batch) {
-      const entry = parseGame(g, puuid);
+      const entry = parseGame(g, puuid, mode);
       if (!entry) continue;
       if (entry.gameCreation === cachedEntry.newestGameCreation) {
         foundBoundary = true;
@@ -453,11 +461,12 @@ export async function runAnalysis(
       [],
       0,
       onProgress,
+      mode,
     );
     const fullHistory = result.history;
     fullHistory.forEach((e) => accumulateStats(stats, e));
     if (fullHistory.length > 0)
-      saveCacheEntry(puuid, fullHistory, result.oldestStartIndex);
+      saveCacheEntry(puuid, fullHistory, result.oldestStartIndex, mode);
     onProgress({ finalStats: stats, fullHistory });
     return;
   }
@@ -467,7 +476,7 @@ export async function runAnalysis(
   if (mergedHistory.length >= requestedGameCount) {
     const slice = mergedHistory.slice(0, requestedGameCount);
     slice.forEach((e) => accumulateStats(stats, e));
-    saveCacheEntry(puuid, mergedHistory, cachedEntry.oldestStartIndex);
+    saveCacheEntry(puuid, mergedHistory, cachedEntry.oldestStartIndex, mode);
     onProgress({ finalStats: stats, fullHistory: slice });
     return;
   }
@@ -480,15 +489,16 @@ export async function runAnalysis(
     mergedHistory,
     cachedEntry.oldestStartIndex + BATCH_SIZE,
     onProgress,
+    mode,
   );
   mergedHistory = result.history;
   mergedHistory.forEach((e) => accumulateStats(stats, e));
-  saveCacheEntry(puuid, mergedHistory, result.oldestStartIndex);
+  saveCacheEntry(puuid, mergedHistory, result.oldestStartIndex, mode);
   onProgress({ finalStats: stats, fullHistory: mergedHistory });
 }
 
 // Public entry points
-export async function startSelfAnalysis(updateUICallback, requestedGameCount) {
+export async function startSelfAnalysis(updateUICallback, requestedGameCount, mode = Mode.OFFICIAL) {
   try {
     updateUICallback({ status: "Connecting to Riot Servers…" });
     const { rso, sgpServer } = await getSgpContext();
@@ -500,6 +510,7 @@ export async function startSelfAnalysis(updateUICallback, requestedGameCount) {
       sgpServer,
       rso.token,
       updateUICallback,
+      mode,
     );
   } catch (e) {
     updateUICallback({ error: e.message });
@@ -510,6 +521,7 @@ export async function startInvestigatorAnalysis(
   updateUICallback,
   riotId,
   requestedGameCount,
+  mode = Mode.OFFICIAL,
 ) {
   try {
     updateUICallback({ status: `Resolving Riot ID "${riotId}"…` });
@@ -517,7 +529,7 @@ export async function startInvestigatorAnalysis(
     const { puuid, displayName } = await resolvePuuid(riotId);
     setMyPuuid(puuid);
     updateUICallback({
-      status: `Found ${displayName} — fetching Mayhem history…`,
+      status: `Found ${displayName} - fetching Mayhem history…`,
     });
     await runAnalysis(
       puuid,
@@ -525,13 +537,14 @@ export async function startInvestigatorAnalysis(
       sgpServer,
       rso.token,
       updateUICallback,
+      mode,
     );
   } catch (e) {
     updateUICallback({ error: e.message });
   }
 }
 
-export async function getHomeDashboardData() {
+export async function getHomeDashboardData(mode = Mode.OFFICIAL) {
   try {
     const settings = await loadSettings();
     const lookback = settings.dashboardLookback || 20;
@@ -540,7 +553,7 @@ export async function getHomeDashboardData() {
     if (!user || !user.puuid) return null;
     const myPuuid = user.puuid;
 
-    const entry = readCacheEntry(myPuuid);
+    const entry = readCacheEntry(myPuuid, mode);
     if (!entry || !entry.history || entry.history.length === 0) return null;
 
     const historySubset = entry.history.slice(0, lookback);
@@ -664,7 +677,7 @@ export async function getHomeDashboardData() {
       savedAt: entry.savedAt,
     };
   } catch (e) {
-    console.error("[MD] Dashboard data fetch failed:", e);
+    Utils.Debug.error("[MD] Dashboard data fetch failed:", e);
     return null;
   }
 }

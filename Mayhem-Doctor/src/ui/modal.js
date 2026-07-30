@@ -17,6 +17,8 @@ import {
   getSettings,
 } from "./settings.js";
 import { cancelCrawl, isCrawlRunning } from "./crawler.js";
+import { Mode, getModeConfig, getModeLabel, getShortLabel } from '../mode.js';
+import Utils from '../generalUtils.js';
 
 // Secret sequence state for modal dashboard
 let _mdHomeSecretIndex = 0;
@@ -400,6 +402,7 @@ export async function openCommandBarModal() {
               onHome: () => renderHome(),
               onClose: closeHost,
               title,
+              mode: _activeMode,
             },
           );
         }
@@ -409,6 +412,8 @@ export async function openCommandBarModal() {
   }
 
   // Picker screen
+  let _activeMode = Mode.OFFICIAL;
+
   async function renderHome() {
     if (!isHostOpen()) return;
 
@@ -422,7 +427,7 @@ export async function openCommandBarModal() {
     modalContent.innerHTML =
       '<div class="mi-status-bar mi-status-info" style="margin:40px auto; width: fit-content; background: transparent; border: none;">Loading dashboard...</div>';
 
-    const dashData = await getHomeDashboardData();
+    const dashData = await getHomeDashboardData(_activeMode);
     if (!isHostOpen()) return;
 
     let dashboardHtml = "";
@@ -436,7 +441,7 @@ export async function openCommandBarModal() {
       dashboardHtml = `
           <div class="home-dash">
               <div class="dash-welcome">
-                  <span class="dash-label">Your Dashboard (Last ${dashData.lookback})</span>
+                  <span class="dash-label">${getModeLabel(_activeMode)} Dashboard (Last ${dashData.lookback})</span>
                   <div class="dash-summary">${dashData.wins}W - ${dashData.losses}L &bull; <span class="aram-win-high">${wr}% WR</span></div>
                   <div class="dash-trend">
                       ${dashData.trend.map((res) => `<div class="trend-dot ${res === "Win" ? "win" : res === "Loss" ? "loss" : "remake"}"></div>`).join("")}
@@ -517,7 +522,7 @@ export async function openCommandBarModal() {
                       <span class="analytic-label dash-lifetime-label">All-Time Favorites</span>
                   </div>
               </div>
-              <div class="dash-footer">Cached: ${dashData.totalGames} games &nbsp;&bull;&nbsp; Updated: ${new Date(dashData.savedAt).toLocaleTimeString()}</div>
+              <div class="dash-footer">${getModeLabel(_activeMode)} &bull; Cached: ${dashData.totalGames} games &nbsp;&bull;&nbsp; Updated: ${new Date(dashData.savedAt).toLocaleTimeString()}</div>
           </div>
       `;
     }
@@ -558,7 +563,7 @@ export async function openCommandBarModal() {
             const expected = _mdHomeSecretGoal[_mdHomeSecretIndex];
             if (char === expected) {
                 _mdHomeSecretIndex++;
-                console.log(`[Mayhem-Doctor] Home Secret: ${_mdHomeSecretIndex}/${_mdHomeSecretGoal.length}`);
+                Utils.Debug.log(`[Mayhem-Doctor] Home Secret: ${_mdHomeSecretIndex}/${_mdHomeSecretGoal.length}`);
                 if (_mdHomeSecretIndex === _mdHomeSecretGoal.length) {
                     _mdHomeSecretIndex = 0;
                     const current = getSettings().enableGlobalCrawl;
@@ -574,14 +579,14 @@ export async function openCommandBarModal() {
                     if (typeof Toast !== 'undefined') {
                         Toast.success(msg);
                     } else {
-                        console.log(`[Mayhem-Doctor] ${msg}`);
+                        Utils.Debug.log(`[Mayhem-Doctor] ${msg}`);
                     }
 
                     secretWrap.style.transition = "color 0.2s ease";
                     secretWrap.style.color = "#f0d67d";
                 }
             } else {
-                if (_mdHomeSecretIndex > 0) console.log("[Mayhem-Doctor] Home Secret reset!");
+                if (_mdHomeSecretIndex > 0) Utils.Debug.log("[Mayhem-Doctor] Home Secret reset!");
                 _mdHomeSecretIndex = 0;
             }
         }, { capture: true });
@@ -611,6 +616,10 @@ export async function openCommandBarModal() {
     modalContent.innerHTML = `
             <div class="aram-modal-tools">
                 <div class="aram-modal-close" title="Close">&times;</div>
+            </div>
+            <div class="md-mode-tabs">
+                <button class="md-mode-tab ${_activeMode === Mode.OFFICIAL ? 'active' : ''}" data-mode="${Mode.OFFICIAL}">${getShortLabel(Mode.OFFICIAL)}</button>
+                <button class="md-mode-tab ${_activeMode === Mode.CLASSIC ? 'active' : ''}" data-mode="${Mode.CLASSIC}">${getShortLabel(Mode.CLASSIC)}</button>
             </div>
             <h2 style="margin-bottom: 20px;">Mayhem Doctor</h2>
             <div class="home-layout">
@@ -644,6 +653,13 @@ export async function openCommandBarModal() {
             </div>
         `;
 
+    modalContent.querySelectorAll('.md-mode-tab').forEach(tab => {
+        tab.onclick = () => {
+            _activeMode = tab.dataset.mode;
+            renderHome();
+        };
+    });
+
     modalContent.querySelector(".aram-modal-close").onclick = closeHost;
 
     const placeholder = modalContent.querySelector("#md-home-info-placeholder");
@@ -664,7 +680,7 @@ export async function openCommandBarModal() {
     modalContent.querySelector("#cb-self-btn").onclick = () => {
       const count = parseInt(numInput.value, 10) || 50;
       updateSetting("lastAnalysisCount", count);
-      runAndRender(startSelfAnalysis, [count], "My Mayhem Stats");
+      runAndRender(startSelfAnalysis, [count, _activeMode], `${getModeLabel(_activeMode)} Stats`);
     };
 
     modalContent.querySelector("#cb-other-btn").onclick = () => {
@@ -684,8 +700,8 @@ export async function openCommandBarModal() {
       updateSetting("lastAnalysisCount", count);
       runAndRender(
         startInvestigatorAnalysis,
-        [riotId, count],
-        `${riotId} - Mayhem Stats`,
+        [riotId, count, _activeMode],
+        `${riotId} - ${getModeLabel(_activeMode)} Stats`,
       );
     };
   }

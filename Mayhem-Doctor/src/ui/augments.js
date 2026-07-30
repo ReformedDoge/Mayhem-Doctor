@@ -96,7 +96,7 @@ export function renderSeenPairCards(pairs) {
     if (pairs.length === 0) {
         const p = document.createElement('p');
         p.className = 'sc-empty';
-        p.textContent = 'Not enough data — need ≥2 games with the same pair.';
+        p.textContent = 'Not enough data - need ≥2 games with the same pair.';
         return p;
     }
     const wrap = document.createElement('div');

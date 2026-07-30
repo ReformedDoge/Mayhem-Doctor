@@ -1,3 +1,6 @@
+import { Mode, getValidQueueIds, getQueueId } from '../mode.js';
+import Utils from '../generalUtils.js';
+
 /**
  * Global champion data crawl engine.
  *
@@ -36,10 +39,10 @@ import {
 import { toPatchLabel } from './patchFilter.js';
 import { readCacheIndex } from '../cache.js';
 
-// Game buffer — holds g[] packed game records in memory for the entire crawl.
+// Game buffer - holds g[] packed game records in memory for the entire crawl.
 // Written to DataStore in a single operation at crawl end together with the
 // accumulator's s[] stats.  Zero writes to md-global-stats during the crawl;
-// saveCrawlState() keeps crawl state in memory only — commitCrawlState()
+// saveCrawlState() keeps crawl state in memory only - commitCrawlState()
 // flushes it once at crawl end alongside the stats write.
 // This eliminates the repeated 20-60 MB JSON serialisation cycles that caused
 // 3.5 GB V8 heap fragmentation.
@@ -57,7 +60,7 @@ function _bufferGameRecord(champId, packedRec) {
  * Persist final crawl results: build complete stats from the in-memory
  * accumulator (s[]) and game buffer (g[]), write to DataStore once.
  */
-function _persistFinalStats(accum, patch) {
+function _persistFinalStats(accum, patch, mode = Mode.OFFICIAL) {
     try {
         writeFinalCrawlStats({
             champions: accum.champions,
@@ -66,9 +69,9 @@ function _persistFinalStats(accum, patch) {
             totalGames: accum.totalGames,
             visitedCount: accum.visited ? accum.visited.size : 0,
             seenPatches: accum.seenPatches,
-        });
+        }, mode);
     } catch (e) {
-        console.error('[MD-Crawler] _persistFinalStats failed:', e);
+        Utils.Debug.error('[MD-Crawler] _persistFinalStats failed:', e);
     } finally {
         _gameBuffer = {};
         _gameBufferCount = 0;
@@ -102,12 +105,13 @@ function shuffle(arr) {
 
 /**
  * Fetches one batch of games for a PUUID directly from the SGP endpoint.
- * Does NOT use the per-player cache — we want raw game data for all participants.
+ * Does NOT use the per-player cache - we want raw game data for all participants.
  * Returns an array of raw game objects (g.json populated).
  */
-async function fetchRawBatch(puuid, sgpServer, rsoToken, startIndex) {
+async function fetchRawBatch(puuid, sgpServer, rsoToken, startIndex, mode = Mode.OFFICIAL) {
+    const tag = `q_${getQueueId(mode)}`;
     const url = `${sgpServer}/match-history-query/v1/products/lol/player/${puuid}/SUMMARY` +
-                `?startIndex=${startIndex}&count=${CRAWL_BATCH_SIZE}`;
+                `?startIndex=${startIndex}&count=${CRAWL_BATCH_SIZE}&tag=${tag}`;
     const resp = await fetch(url, {
         headers: { Authorization: `Bearer ${rsoToken}` },
     });
@@ -120,10 +124,10 @@ async function fetchRawBatch(puuid, sgpServer, rsoToken, startIndex) {
  * Processes a single raw game into the crawler's accumulator.
  * Returns the list of participant PUUIDs for queue expansion.
  */
-function processGame(rawGame, targetPatch, accum) {
+function processGame(rawGame, targetPatch, accum, mode = Mode.OFFICIAL) {
     const detail = rawGame.json;
     if (!detail) return { participants: [], isValid: false };
-    if (!VALID_QUEUE_IDS.includes(detail.queueId)) return { participants: [], isValid: false };
+    if (!getValidQueueIds(mode).includes(detail.queueId)) return { participants: [], isValid: false };
 
     const participantPuuids = detail.participants.map(p => p.puuid);
 
@@ -152,7 +156,7 @@ function processGame(rawGame, targetPatch, accum) {
             }
         }
     } catch (e) {
-        console.error('[MD-Crawler] processedGameIds prune failed:', e);
+        Utils.Debug.error('[MD-Crawler] processedGameIds prune failed:', e);
     }
 
     // Remake check
@@ -209,7 +213,7 @@ function processGame(rawGame, targetPatch, accum) {
  * Processes one PUUID: fetches up to maxBatches of games, accumulates stats,
  * and returns new PUUIDs to enqueue.
  */
-async function processPlayer(puuid, sgpServer, rsoToken, targetPatch, accum, maxBatches = 1) {
+async function processPlayer(puuid, sgpServer, rsoToken, targetPatch, accum, maxBatches = 1, mode = Mode.OFFICIAL) {
     const newPuuids = [];
     let consecutiveEmptyBatches = 0;
 
@@ -222,7 +226,7 @@ async function processPlayer(puuid, sgpServer, rsoToken, targetPatch, accum, max
             await delay(getSettings().crawlDelayMs);
         }
 
-        const rawBatch = await fetchRawBatch(puuid, sgpServer, rsoToken, i * CRAWL_BATCH_SIZE);
+        const rawBatch = await fetchRawBatch(puuid, sgpServer, rsoToken, i * CRAWL_BATCH_SIZE, mode);
         
         // If the API returns nothing, this player has no more games.
         if (rawBatch.length === 0) break;
@@ -232,7 +236,7 @@ async function processPlayer(puuid, sgpServer, rsoToken, targetPatch, accum, max
         for (const rawGame of rawBatch) {
             if (accum.totalGames >= getSettings().crawlTargetGames) break;
             
-            const { participants, isValid } = processGame(rawGame, targetPatch, accum);
+            const { participants, isValid } = processGame(rawGame, targetPatch, accum, mode);
             
             if (participants.length > 0) {
                 foundNewParticipants = true;
@@ -267,7 +271,7 @@ async function processPlayer(puuid, sgpServer, rsoToken, targetPatch, accum, max
  * @param {string}   targetPatch e.g. "15.8" or null to skip patch filter
  * @param {function} onProgress  Called with progress payloads
  */
-export async function startCrawl(myPuuid, sgpServer, rsoToken, targetPatch, onProgress) {
+export async function startCrawl(myPuuid, sgpServer, rsoToken, targetPatch, onProgress, mode = Mode.OFFICIAL) {
     if (_running) return;
     _running    = true;
     _cancelFlag = false;
@@ -285,7 +289,7 @@ export async function startCrawl(myPuuid, sgpServer, rsoToken, targetPatch, onPr
     };
 
     // Load or init accumulator
-    let resume = readCrawlState();
+    let resume = readCrawlState(mode);
     const isSamePatch = resume && (!targetPatch || resume.patch === targetPatch);
 
     // Accumulator holds the unpacked in-memory state during a crawl run
@@ -319,7 +323,7 @@ export async function startCrawl(myPuuid, sgpServer, rsoToken, targetPatch, onPr
             const visitedArr = [...accum.visited];
             const reseedCount = Math.min(30, visitedArr.length);
 
-            // Previously: visitedArr.slice(-reseedCount) — took the most recently
+            // Previously: visitedArr.slice(-reseedCount) - took the most recently
             // visited players (frontier nodes), whose neighbours were already exhausted,
             // causing the reseed to spin in the same graph cluster.
             //
@@ -332,18 +336,18 @@ export async function startCrawl(myPuuid, sgpServer, rsoToken, targetPatch, onPr
                 accum.visited.delete(p);
                 queue.push(p);
             });
-            report('running', { message: `Queue was empty — re-seeding from ${reseed.length} previously visited players…` });
+            report('running', { message: `Queue was empty - re-seeding from ${reseed.length} previously visited players…` });
         } else {
             report('running', { message: `Resuming crawl (${accum.totalGames.toLocaleString()} games already collected)…` });
         }
 
     } else {
-        // Fresh crawl — clear old state
-        clearCrawlState();
+        // Fresh crawl - clear old state
+        clearCrawlState(mode);
         queue = [myPuuid];
         
         try {
-            const idx = readCacheIndex();
+            const idx = readCacheIndex(mode);
             if (idx && Array.isArray(idx.puuids)) {
                 for (const p of idx.puuids) {
                     if (p !== myPuuid) queue.push(p);
@@ -358,7 +362,7 @@ export async function startCrawl(myPuuid, sgpServer, rsoToken, targetPatch, onPr
     // Load existing champion stats into the accumulator so both fresh and
     // resumed crawls preserve previously-collected s[] data.  On resume,
     // processedGameIds prevents double-counting.
-    const existing = readGlobalStats();
+    const existing = readGlobalStats(mode);
     if (existing) {
         for (const [champId, cS] of Object.entries(existing.stats.champions)) {
             if (!accum.champions[champId]) {
@@ -394,7 +398,7 @@ export async function startCrawl(myPuuid, sgpServer, rsoToken, targetPatch, onPr
                 }
             }
         }
-        clearGlobalStatsCache();
+        clearGlobalStatsCache(mode);
     }
 
     // Strip g[] game records from DataStore into the in-memory game buffer.
@@ -402,14 +406,14 @@ export async function startCrawl(myPuuid, sgpServer, rsoToken, targetPatch, onPr
     // stays tiny on disk.  Records are written back once at crawl end via
     // _persistFinalStats.
     try {
-        const strippedG = stripGameRecordsFromStore();
+        const strippedG = stripGameRecordsFromStore(mode);
         for (const [champId, records] of Object.entries(strippedG)) {
             if (!_gameBuffer[champId]) _gameBuffer[champId] = [];
             for (const rec of records) _gameBuffer[champId].push(rec);
             _gameBufferCount += records.length;
         }
     } catch (e) {
-        console.error('[MD-Crawler] Failed to strip g[] from DataStore at crawl start:', e);
+        Utils.Debug.error('[MD-Crawler] Failed to strip g[] from DataStore at crawl start:', e);
     }
 
     let playersSinceLastSave = 0;
@@ -468,7 +472,7 @@ export async function startCrawl(myPuuid, sgpServer, rsoToken, targetPatch, onPr
                         if (index > 0 && getSettings().crawlDelayMs > 0) {
                             await delay(index * getSettings().crawlDelayMs);
                         }
-                        return processPlayer(puuid, sgpServer, rsoToken, targetPatch, accum, digDeep ? 5 : 1);
+                        return processPlayer(puuid, sgpServer, rsoToken, targetPatch, accum, digDeep ? 5 : 1, mode);
                     })().then(newPuuids => ({ newPuuids }));
                 })
             );
@@ -490,7 +494,7 @@ export async function startCrawl(myPuuid, sgpServer, rsoToken, targetPatch, onPr
 
             playersSinceLastSave += batch.length;
 
-            // Periodic save — crawl state only (md-global-crawl).
+            // Periodic save - crawl state only (md-global-crawl).
             // No writes to md-global-stats; everything persists at crawl end.
             if (playersSinceLastSave >= getSettings().crawlSaveEvery) {
                 playersSinceLastSave = 0;
@@ -501,11 +505,11 @@ export async function startCrawl(myPuuid, sgpServer, rsoToken, targetPatch, onPr
                     processedGameIds: accum.processedGameIds,
                     totalGames: accum.totalGames,
                     startedAt: resume?.startedAt || Date.now(),
-                });
+                }, mode);
             }
         }
     } catch (e) {
-        console.error('[MD-Crawler] Crawl error:', e);
+        Utils.Debug.error('[MD-Crawler] Crawl error:', e);
         // Save progress before surfacing the error
         saveCrawlState({
             patch: targetPatch,
@@ -515,17 +519,17 @@ export async function startCrawl(myPuuid, sgpServer, rsoToken, targetPatch, onPr
             totalGames: accum.totalGames,
             seenPatches: accum.seenPatches,
             startedAt: resume?.startedAt || Date.now(),
-        });
-        commitCrawlState();
+        }, mode);
+        commitCrawlState(mode);
         // Persist all stats (s[] + g[]) in one write.
-        _persistFinalStats(accum, targetPatch);
+        _persistFinalStats(accum, targetPatch, mode);
         _running = false;
         report('error', { error: e.message, message: `Crawl error: ${e.message}` });
         return;
     }
 
     // Write final stats (s[] + g[]) to DataStore in a single operation.
-    _persistFinalStats(accum, targetPatch);
+    _persistFinalStats(accum, targetPatch, mode);
 
     const reachedTarget = accum.totalGames >= getSettings().crawlTargetGames;
 
@@ -540,15 +544,15 @@ export async function startCrawl(myPuuid, sgpServer, rsoToken, targetPatch, onPr
             totalGames: accum.totalGames,
             seenPatches: accum.seenPatches,
             startedAt: resume?.startedAt || Date.now(),
-        });
-        commitCrawlState();
+        }, mode);
+        commitCrawlState(mode);
         _running = false;
         if (_cancelFlag) {
-            report('cancelled', { message: `Cancelled — ${accum.totalGames.toLocaleString()} games saved. Click Resume to continue.` });
+            report('cancelled', { message: `Cancelled - ${accum.totalGames.toLocaleString()} games saved. Click Resume to continue.` });
         } else {
             // Stopped because per-session player cap was hit; more progress possible
             report('done', {
-                message: `Session complete — ${accum.totalGames.toLocaleString()} games so far · ` +
+                message: `Session complete - ${accum.totalGames.toLocaleString()} games so far · ` +
                          `${accum.visited.size} players total. ` +
                          (queue.length > 0 ? 'Click Resume to continue.' : 'Queue exhausted.'),
             });
@@ -576,7 +580,7 @@ export async function startCrawl(myPuuid, sgpServer, rsoToken, targetPatch, onPr
         _gameBufferCount = 0;
     } catch (e) {}
     } else {
-        // Target reached — truly done, no need to resume
+        // Target reached - truly done, no need to resume
         saveCrawlState({
             patch: targetPatch,
             queue: [], // intentionally empty: target met
@@ -585,8 +589,8 @@ export async function startCrawl(myPuuid, sgpServer, rsoToken, targetPatch, onPr
             totalGames: accum.totalGames,
             seenPatches: accum.seenPatches,
             startedAt: resume?.startedAt || Date.now(),
-        });
-        commitCrawlState();
+        }, mode);
+        commitCrawlState(mode);
         _running = false;
         report('done', {
             message: `Complete! ${accum.totalGames.toLocaleString()} unique games · ` +

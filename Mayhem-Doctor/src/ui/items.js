@@ -81,7 +81,7 @@ export function renderItemComboCards(combos, size) {
   if (combos.length === 0) {
     const p = document.createElement("p");
     p.className = "sc-empty";
-    p.textContent = `Not enough data — need ≥2 games with the same ${size}-item core.`;
+    p.textContent = `Not enough data - need ≥2 games with the same ${size}-item core.`;
     return p;
   }
   const wrap = document.createElement("div");
@@ -200,7 +200,7 @@ function buildArchitectSection(games, cItemStats) {
   const root = document.createElement("div");
   root.className = "sc-architect-root";
 
-  // Local weight — does not mutate the global SETTINGS object
+  // Local weight - does not mutate the global SETTINGS object
   let synergyWeight = 0.3;
 
   function renderInner() {

@@ -1954,4 +1954,37 @@ export const STYLES = `
 .sc-tier-col--kSilver .sc-tier-item-mini:hover { border-color: rgba(192, 192, 192, 0.3); }
 .sc-tier-col--kSilver .sc-tier-item-mini:hover .sc-tier-icon-mini { border-color: #c0c0c0; box-shadow: 0 0 6px rgba(192, 192, 192, 0.4); }
 
+.md-mode-tabs {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 16px;
+    border-bottom: 1px solid rgba(200, 170, 110, 0.2);
+    padding-bottom: 0;
+}
+
+.md-mode-tab {
+    background: transparent;
+    border: 1px solid transparent;
+    border-bottom: none;
+    color: rgba(200, 170, 110, 0.5);
+    padding: 8px 20px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 600;
+    border-radius: 4px 4px 0 0;
+    transition: all 0.2s ease;
+    letter-spacing: 0.5px;
+}
+
+.md-mode-tab:hover {
+    color: rgba(200, 170, 110, 0.8);
+    background: rgba(200, 170, 110, 0.05);
+}
+
+.md-mode-tab.active {
+    color: #c8aa6e;
+    border-color: rgba(200, 170, 110, 0.3);
+    background: rgba(200, 170, 110, 0.08);
+}
+
 `;
