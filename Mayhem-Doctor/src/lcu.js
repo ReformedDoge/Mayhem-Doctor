@@ -32,7 +32,7 @@ export async function loadStaticData() {
             // No inStore filter - quest/special boots are valid if players can obtain
             // them. If they don't appear in match data they contribute nothing anyway.
             const cats = i.categories || [];
-            if (cats.includes('Boots') && i.id !== 1001 && !BOOT_IDS.has(i.id)) {
+            if (cats.includes('Boots') && i.id !== 1001 && i.id !== 771001 && !BOOT_IDS.has(i.id)) {
                 BOOT_IDS.add(i.id);
                 Utils.Debug.log(`[Mayhem-Doctor] Detected new boot from items.json: ${i.name} (${i.id})`);
             }

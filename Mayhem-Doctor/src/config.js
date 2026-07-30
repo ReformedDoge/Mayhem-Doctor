@@ -21,6 +21,7 @@ export const BLACKLIST_ITEM_IDS = new Set([
     // Consumables, Potions & Juices
     2003, 2010, 2031, 2033, 2052, 2138, 2139, 2140, 2141, 2142, 2143, 2144, 2145, 2146, 2150, 2151, 2152,
     2161, 2162, 2163, 222141, 220013,
+    772003,  // Health Potion (Classic)
 
     // Event & Special Items
     550007, 550006, 550005, 550004, 550003, 550002, 550001,
@@ -37,22 +38,28 @@ export const BLACKLIST_ITEM_IDS = new Set([
     // Starter Items (ARAM & Normal)
     1054, 1055, 1056, 1082, 1083, 2049, 2050, 2051, 2061, 2062,
     3112, 3177, 3184, 222051, 223112, 223177, 223184, 223185, // Guardian's Items
+    771054, 771055, 771056, // Doran's items (Classic)
 
     // Basic Components (Tier 1)
     1001, 1004, 1006, 1018, 1026, 1027, 1028, 1029, 1033, 1036, 1037, 1038, 1042, 1052, 1057, 1058, 2022, 323070,
+    771004, 771006, 771018, 771026, 771027, 771028, 771029, 771033, 771036, 771037, 771038, 771042, 771052, 771057, 771058, // (Classic)
 
     // Mid-Tier Components (Tier 2)
     1011, 1031, 1043, 1053, 2015, 2019, 2020, 2021, 2420, 2421, 2508, 3010, 3012, 3023, 3024, 3035, 
     3051, 3057, 3066, 3067, 3070, 3076, 3077, 3082, 3086, 3098, 3105, 3108, 3113, 3114, 3123, 3133, 
     3134, 3140, 3144, 3145, 3147, 3155, 3191, 3211, 3801, 3802, 3803, 3916, 4003, 4630, 4632, 4638, 4642, 6660, 6670, 6690,
+    771011, 771031, 771043, 771053, 773035, 773057, 773067, 773070, 773077, 773082, 773086, 773105, 773108, 773123, 773140, 773155, 773211, // (Classic)
     
     // Boots - all tiers and ARAM variants
     3005, 3006, 3009, 3010, 3017, 3020, 3047, 3111, 3117, 3158, 4001,
     3008, 3013, 3168, 3170, 3171, 3173, 3174, 3175, 3176, 1111,
     223005, 223006, 223008, 223009, 223020, 223047, 223111, 223158,
     
+    // 77xxxx Classic/Jade mode mirror boots
+    771001, 773006, 773009, 773020, 773047, 773111, 773117, 773158,
+    
     //Anvil Voucher
-    3865,
+    3865, 2422,
 ]);
 
 // Known completed boot item IDs.
@@ -75,10 +82,14 @@ export const BOOT_IDS = new Set([
     223005, 223006, 223008, 223009, 223020, 223047, 223111, 223158,
     // Special/quest boots (inStore:false but obtainable in Mayhem)
     1111,  // Jarvan I's
-    3013,  // Synchronized Souls
-    3176,  // Forever Forward
-    // Special ARAM-only boots
-    2422,  // Slightly Magical Footwear
+    // Classic/Jade mode mirror boots (77xxxx)
+    773006,  // Berserker's Greaves
+    773009,  // Boots of Swiftness
+    773020,  // Sorcerer's Shoes
+    773047,  // Ninja Tabi
+    773111,  // Mercury's Treads
+    773117,  // Boots of Mobility
+    773158,  // Ionian Boots of Lucidity
 ]);
 
 // SGP server endpoints keyed by region code
