@@ -94,6 +94,27 @@ function delay(ms) {
     return new Promise(r => setTimeout(r, ms));
 }
 
+// RSO tokens are rotated by the client
+// Refresh before that can happen and on 401 (guard).
+const TOKEN_REFRESH_MS = 4 * 60 * 1000;
+
+async function refreshToken(tokenRef, force = false) {
+    if (!force && Date.now() - tokenRef.fetchedAt < TOKEN_REFRESH_MS) return false;
+    try {
+        const { getSgpContext } = await import('../lcu.js');
+        const ctx = await getSgpContext();
+        if (ctx?.rso?.token) {
+            tokenRef.value = ctx.rso.token;
+            tokenRef.fetchedAt = Date.now();
+            Utils.Debug.log('[MD-Crawler] SGP token refreshed');
+            return true;
+        }
+    } catch (e) {
+        Utils.Debug.error('[MD-Crawler] SGP token refresh failed:', e);
+    }
+    return false;
+}
+
 /** Fisher-Yates shuffle (in-place, returns array) */
 function shuffle(arr) {
     for (let i = arr.length - 1; i > 0; i--) {
@@ -108,14 +129,32 @@ function shuffle(arr) {
  * Does NOT use the per-player cache - we want raw game data for all participants.
  * Returns an array of raw game objects (g.json populated).
  */
-async function fetchRawBatch(puuid, sgpServer, rsoToken, startIndex, mode = Mode.OFFICIAL) {
+async function fetchRawBatch(puuid, sgpServer, tokenRef, startIndex, mode = Mode.OFFICIAL) {
     const tag = `q_${getQueueId(mode)}`;
     const url = `${sgpServer}/match-history-query/v1/products/lol/player/${puuid}/SUMMARY` +
                 `?startIndex=${startIndex}&count=${CRAWL_BATCH_SIZE}&tag=${tag}`;
-    const resp = await fetch(url, {
-        headers: { Authorization: `Bearer ${rsoToken}` },
+
+    let resp = await fetch(url, {
+        headers: { Authorization: `Bearer ${tokenRef.value}` },
     });
-    if (!resp.ok) return [];
+
+    // Token rotation guard: refresh once and retry the same request
+    if (resp.status === 401) {
+        Utils.Debug.warn(`[MD-Crawler] SGP 401 for ${puuid.slice(0, 8)}… - refreshing token and retrying`);
+        const refreshed = await refreshToken(tokenRef, true);
+        if (refreshed) {
+            resp = await fetch(url, {
+                headers: { Authorization: `Bearer ${tokenRef.value}` },
+            });
+        }
+    }
+
+    if (!resp.ok) {
+        if (resp.status !== 401) {
+            Utils.Debug.warn(`[MD-Crawler] SGP ${resp.status} for ${puuid.slice(0, 8)}… - skipped`);
+        }
+        return [];
+    }
     const data = await resp.json();
     return data.games || [];
 }
@@ -213,7 +252,7 @@ function processGame(rawGame, targetPatch, accum, mode = Mode.OFFICIAL) {
  * Processes one PUUID: fetches up to maxBatches of games, accumulates stats,
  * and returns new PUUIDs to enqueue.
  */
-async function processPlayer(puuid, sgpServer, rsoToken, targetPatch, accum, maxBatches = 1, mode = Mode.OFFICIAL) {
+async function processPlayer(puuid, sgpServer, tokenRef, targetPatch, accum, maxBatches = 1, mode = Mode.OFFICIAL) {
     const newPuuids = [];
     let consecutiveEmptyBatches = 0;
 
@@ -226,7 +265,7 @@ async function processPlayer(puuid, sgpServer, rsoToken, targetPatch, accum, max
             await delay(getSettings().crawlDelayMs);
         }
 
-        const rawBatch = await fetchRawBatch(puuid, sgpServer, rsoToken, i * CRAWL_BATCH_SIZE, mode);
+        const rawBatch = await fetchRawBatch(puuid, sgpServer, tokenRef, i * CRAWL_BATCH_SIZE, mode);
         
         // If the API returns nothing, this player has no more games.
         if (rawBatch.length === 0) break;
@@ -275,6 +314,9 @@ export async function startCrawl(myPuuid, sgpServer, rsoToken, targetPatch, onPr
     if (_running) return;
     _running    = true;
     _cancelFlag = false;
+
+    // Mutable token holder so periodic refresh + 401 guard can swap in a new token
+    const tokenRef = { value: rsoToken, fetchedAt: Date.now() };
 
     const report = (phase, extra = {}) => {
         try {
@@ -457,6 +499,8 @@ export async function startCrawl(myPuuid, sgpServer, rsoToken, targetPatch, onPr
 
             if (batch.length === 0) continue;
 
+            await refreshToken(tokenRef);
+
             report('running', {
                 message: `Processing ${batch.length} player(s)… ` +
                          `${accum.totalGames.toLocaleString()} games · ` +
@@ -472,7 +516,7 @@ export async function startCrawl(myPuuid, sgpServer, rsoToken, targetPatch, onPr
                         if (index > 0 && getSettings().crawlDelayMs > 0) {
                             await delay(index * getSettings().crawlDelayMs);
                         }
-                        return processPlayer(puuid, sgpServer, rsoToken, targetPatch, accum, digDeep ? 5 : 1, mode);
+                        return processPlayer(puuid, sgpServer, tokenRef, targetPatch, accum, digDeep ? 5 : 1, mode);
                     })().then(newPuuids => ({ newPuuids }));
                 })
             );
