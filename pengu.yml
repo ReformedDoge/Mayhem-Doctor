@@ -1,0 +1,16 @@
+id: mayhem-doctor
+name: Mayhem-Doctor
+description: Aram Mayhem Plugin for Pengu Loader.
+version: 1.2.0
+
+repo: https://github.com/ReformedDoge/Snooze-Manager
+
+author:
+  name: SnoozeFest
+  github: ReformedDoge
+
+theme: false
+tags: [plugin, aram, mayhem]
+
+install:
+  release: "Mayhem-Doctor-*.zip"
