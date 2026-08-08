@@ -8,6 +8,9 @@
  * @param {Function|null}                  onRowClick (row, event) => void
  * @returns {HTMLTableElement}
  */
+
+import { wilsonLowerBound } from '../analysis.js';
+
 export function createInteractiveTable(columns, data, defaultSortKey = null, defaultSortAsc = false, onRowClick = null) {
     const table = document.createElement('table');
     table.className = 'aram-sortable-table';
@@ -17,7 +20,7 @@ export function createInteractiveTable(columns, data, defaultSortKey = null, def
     let sortAsc = defaultSortAsc;
     let collapsed = false;
 
-    // Collapse toggle cell 
+    // Collapse toggle cell
     const collapseCell = document.createElement('th');
     collapseCell.className = 'aram-collapse-cell';
     collapseCell.innerHTML = '<span class="aram-collapse-icon">▾</span>';
@@ -44,12 +47,12 @@ export function createInteractiveTable(columns, data, defaultSortKey = null, def
         };
         trHead.appendChild(th);
     });
+
     thead.appendChild(trHead);
 
     const updateHeaderStyles = () => {
-        // offset by 1 to account for the collapse cell
         Array.from(trHead.children).forEach((e, i) => {
-            if (i === 0) return; // skip collapse cell
+            if (i === 0) return;
             e.className = '';
             if (columns[i - 1].key === sortKey) e.className = sortAsc ? 'aram-sorted-asc' : 'aram-sorted-desc';
         });
@@ -60,12 +63,11 @@ export function createInteractiveTable(columns, data, defaultSortKey = null, def
         data.sort((a, b) => {
             let valA = a[sortKey], valB = b[sortKey];
 
-            // Smart Sort for Win Rate: Priority = WR + (log(Games) * 5)
+            // Smart Sort for Win Rate: Wilson 95% lower confidence bound
             if (sortKey === 'winRate' && a.games !== undefined && b.games !== undefined) {
-                const scoreA = valA + (Math.log(Math.max(1, a.games)) * 5);
-                const scoreB = valB + (Math.log(Math.max(1, b.games)) * 5);
+                const scoreA = wilsonLowerBound(a.wins ?? 0, a.games);
+                const scoreB = wilsonLowerBound(b.wins ?? 0, b.games);
                 if (scoreA !== scoreB) return sortAsc ? scoreA - scoreB : scoreB - scoreA;
-                // Tie-breaker: pure games
                 return sortAsc ? a.games - b.games : b.games - a.games;
             }
 
@@ -80,7 +82,6 @@ export function createInteractiveTable(columns, data, defaultSortKey = null, def
                 tr.style.cursor = 'pointer';
                 tr.addEventListener('click', (e) => onRowClick(row, e));
             }
-            // Spacer td to align with the collapse cell column
             const spacer = document.createElement('td');
             spacer.className = 'aram-collapse-spacer';
             tr.appendChild(spacer);
@@ -100,4 +101,65 @@ export function createInteractiveTable(columns, data, defaultSortKey = null, def
     table.appendChild(thead);
     table.appendChild(tbody);
     return table;
+}
+
+/**
+ * Attaches a search button to an existing section title element and returns
+ * a filter function. Renders a collapsible input row between the title and the
+ * table, filtering tableData by the given key and re-rendering via renderFn.
+ *
+ * @param {HTMLElement}  titleEl    the .sc-section-title h3
+ * @param {Array}        tableData  the full data array passed to createInteractiveTable
+ * @param {string}       searchKey  field on each row to match against
+ * @param {Function}     renderFn   called with (filteredData) to rebuild the table
+ */
+export function attachTableSearch(titleEl, tableData, searchKey, renderFn) {
+    const btn = document.createElement('button');
+    btn.className = 'aram-table-search-btn';
+    btn.textContent = '⌕';
+    btn.title = 'Search';
+    titleEl.appendChild(btn);
+
+    let bar = null;
+    let input = null;
+
+    const close = () => {
+        btn.classList.remove('aram-table-search-btn--active');
+        if (bar) {
+            bar.remove();
+            bar = null;
+            input = null;
+            renderFn(tableData);
+        }
+    };
+
+    btn.addEventListener('click', () => {
+        if (bar) { close(); return; }
+
+        bar = document.createElement('div');
+        bar.className = 'aram-table-search-bar';
+
+        input = document.createElement('input');
+        input.type = 'text';
+        input.className = 'aram-table-search-bar-input';
+        input.placeholder = 'Type to filter…';
+        input.setAttribute('autocomplete', 'off');
+        bar.appendChild(input);
+        titleEl.insertAdjacentElement('afterend', bar);
+
+        input.addEventListener('input', () => {
+            const needle = input.value.toLowerCase();
+            const filtered = needle
+                ? tableData.filter(r => String(r[searchKey] ?? '').toLowerCase().includes(needle))
+                : tableData;
+            renderFn(filtered);
+        });
+
+        input.addEventListener('keydown', e => {
+            if (e.key === 'Escape') close();
+        });
+
+        btn.classList.add('aram-table-search-btn--active');
+        input.focus();
+    });
 }

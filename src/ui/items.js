@@ -8,7 +8,7 @@ import {
   analyzeChampBuildPath,
   getWRColor,
 } from "../analysis.js";
-import { createInteractiveTable } from "./table.js";
+import { createInteractiveTable, attachTableSearch } from "./table.js";
 import { BLACKLIST_ITEM_IDS } from "../config.js";
 
 // Item chip
@@ -165,27 +165,39 @@ export function buildItemSection(games, cItemStats) {
     p.textContent = "No item data.";
     itemSection.appendChild(p);
   } else {
-    itemSection.appendChild(
-      createInteractiveTable(
-        [
-          {
-            label: "Item",
-            key: "name",
-            render: (r) =>
-              `<div class="aram-icon-cell">${r.icon ? `<img src="${r.icon}" class="aram-icon">` : ""} ${r.name}</div>`,
-          },
-          { label: "Built", key: "games" },
-          {
-            label: "Win %",
-            key: "winRate",
-            render: (r) =>
-              `<span class="${r.winRate >= 60 ? "aram-win-high" : r.winRate <= 40 ? "aram-win-low" : ""}">${r.winRate.toFixed(1)}%</span>`,
-          },
-        ],
-        itemRows,
-        "games",
-      ),
-    );
+    const columns = [
+      {
+        label: "Item",
+        key: "name",
+        render: (r) =>
+          `<div class="aram-icon-cell">${r.icon ? `<img src="${r.icon}" class="aram-icon">` : ""} ${r.name}</div>`,
+      },
+      { label: "Built", key: "games" },
+      {
+        label: "Win %",
+        key: "winRate",
+        render: (r) =>
+          `<span class="${r.winRate >= 60 ? "aram-win-high" : r.winRate <= 40 ? "aram-win-low" : ""}">${r.winRate.toFixed(1)}%</span>`,
+      },
+    ];
+    const itemTable = createInteractiveTable(columns, itemRows, "games");
+    attachTableSearch(itemTableTitle, itemRows, "name", (filtered) => {
+      itemTable.querySelector("tbody").innerHTML = "";
+      filtered.forEach((r) => {
+        const tr = document.createElement("tr");
+        const spacer = document.createElement("td");
+        spacer.className = "aram-collapse-spacer";
+        tr.appendChild(spacer);
+        columns.forEach((col) => {
+          const td = document.createElement("td");
+          if (col.render) td.innerHTML = col.render(r);
+          else td.textContent = r[col.key];
+          tr.appendChild(td);
+        });
+        itemTable.querySelector("tbody").appendChild(tr);
+      });
+    });
+    itemSection.appendChild(itemTable);
   }
 
   return itemSection;
@@ -226,7 +238,7 @@ function buildArchitectSection(games, cItemStats) {
     tuner.innerHTML = `
             <div class="sc-arch-tuner-meta">
                 <span class="sc-arch-tuner-title">BUILD PATHS</span>
-                <span class="sc-arch-tuner-desc">Tuning: <b id="synergy-label">${(100 - synergyWeight * 100).toFixed(0)}% Power / ${(synergyWeight * 100).toFixed(0)}% Synergy</b></span>
+                <span class="sc-arch-tuner-desc">Tuning: <b id="synergy-label">${(100 - synergyWeight * 100).toFixed(0)}% Popularity / ${(synergyWeight * 100).toFixed(0)}% Win Rate</b></span>
             </div>
             <div class="sc-arch-tuner-controls">
                 <input type="range" min="0" max="80" value="${synergyWeight * 100}" class="sc-arch-tuner-slider">
@@ -239,7 +251,7 @@ function buildArchitectSection(games, cItemStats) {
 
     slider.oninput = (e) => {
       const val = parseInt(e.target.value);
-      label.textContent = `${100 - val}% Power / ${val}% Synergy`;
+      label.textContent = `${100 - val}% Popularity / ${val}% Win Rate`;
     };
 
     btn.onclick = () => {
@@ -265,7 +277,7 @@ function buildArchitectSection(games, cItemStats) {
         itemsGrid.innerHTML += `
           <div class="sc-arch-item-box">
             <img src="${itemData?.icon || ""}" class="sc-arch-item-icon" title="${itemData?.name || ""}">
-            <div class="sc-arch-item-wr" style="color: ${color}">${item.wr.toFixed(0)}%</div>
+            <div class="sc-arch-item-wr" style="color: ${color}">${Math.floor(item.wr)}%</div>
           </div>${idx < p.items.length - 1 ? '<div class="sc-arch-arrow">→</div>' : ""}`;
       });
       pathRow.appendChild(itemsGrid);
@@ -288,7 +300,7 @@ function buildArchitectSection(games, cItemStats) {
         bootsGrid.innerHTML += `
           <div class="sc-arch-boot-mini">
             <img src="${itemData?.icon || ""}" class="sc-arch-boot-icon-mini" title="${itemData?.name || ""}">
-            <div class="sc-arch-boot-wr-mini" style="color: ${color}">${b.wr.toFixed(0)}%</div>
+            <div class="sc-arch-boot-wr-mini" style="color: ${color}">${Math.floor(b.wr)}%</div>
           </div>`;
       });
       bootsWrap.appendChild(bootsGrid);

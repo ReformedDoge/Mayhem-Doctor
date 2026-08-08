@@ -398,8 +398,14 @@ function buildChampDetailView(
   detailView.className = "sc-detail-view";
 
   const totalGames = c.games;
+  const rawWr = totalGames > 0 ? (c.wins / totalGames) * 100 : 0;
   const wr =
     totalGames > 0 ? smoothedWinRate(c.wins, totalGames).toFixed(1) : 0;
+
+  const laplaceNote =
+    totalGames > 0 && Math.abs(parseFloat(wr) - rawWr) >= 0.05
+      ? " (Laplace'd)"
+      : "";
   const wrClass =
     parseFloat(wr) >= 60
       ? "aram-win-high"
@@ -443,7 +449,7 @@ function buildChampDetailView(
             <div class="sc-detail-champ-name">${c.name}</div>
             <div class="sc-detail-stats">
                 <span class="aram-win-high">${c.wins}W</span> <span class="aram-dash"> - </span> <span class="aram-win-low">${c.losses}L</span>
-                <span class="aram-dash"> &bull; </span> <span class="${wrClass}">${wr}% WR (Laplace smoothing)</span> <span class="aram-dash"> &bull; </span>
+                <span class="aram-dash"> &bull; </span> <span class="${wrClass}">${wr}% WR${laplaceNote}</span> <span class="aram-dash"> &bull; </span>
                 <span class="sc-total-games">${totalGames} Total Game${totalGames !== 1 ? "s" : ""}</span> <span class="aram-dash"> &bull; </span>
                 <span class="sc-kda-label">KDA: <b>${kdaVal}</b></span> <span class="aram-dash"> &bull; </span>
                 <span class="sc-dmg-label">Avg Dmg: <b>${avgDmg}</b></span>
@@ -453,7 +459,7 @@ function buildChampDetailView(
 
   const mainRow = document.createElement("div");
   mainRow.className = "sc-detail-cols";
-  mainRow.appendChild(buildAugSection(games, cAugStats, totalGames));
+  mainRow.appendChild(buildAugSection(games, cAugStats, totalGames, parseFloat(wr)));
   mainRow.appendChild(buildItemSection(games, cItemStats));
   detailView.appendChild(mainRow);
 
@@ -798,7 +804,7 @@ export function renderGlobalChampionsTab(fullHistory, excludedPatches, onChampCl
             const ok = await saveGlobalStatsToFile(raw, mode);
             if (ok) {
               saveBtn.textContent = "Saved";
-              if (typeof Toast !== 'undefined') Toast.success("Global stats file saved. Place it in the plugin data/ folder to auto-load on startup.");
+              Utils.Toast.success("Global stats file saved. Place it in the plugin data/ folder to auto-load on startup.");
               setTimeout(() => { if(saveBtn) saveBtn.remove(); }, 2000);
             } else {
               saveBtn.disabled = false;
@@ -993,7 +999,7 @@ function buildChampionGridView(
       cell.innerHTML = `
                 <img src="/lol-game-data/assets/v1/champion-icons/${c.id}.png" class="sc-champ-icon" alt="${c.name}">
                 <span class="sc-champ-name">${c.name}</span>
-                <span class="sc-champ-games" style="color: ${color}">${c.games}g (${Math.round(c.winRate)}%)</span>
+                <span class="sc-champ-games" style="color: ${color}">${c.games}g (${Math.floor(c.winRate)}%)</span>
             `;
       cell.onclick = () => showChampDetail(c);
       grid.appendChild(cell);
@@ -1148,11 +1154,7 @@ export async function renderStatsInto(
             setTimeout(() => targetEl.classList.remove("md-unlocked-pulse"), 1000);
 
             const msg = `Global Crawl ${next ? 'unlocked and enabled' : 'disabled'}!`;
-            if (typeof Toast !== 'undefined') {
-                Toast.success(msg);
-            } else {
-                Utils.Debug.log(`[Mayhem-Doctor] ${msg}`);
-            }
+            Utils.Toast.success(msg);
             
             secretWrap.style.transition = "color 0.2s ease";
             secretWrap.style.color = "#f0d67d"; // Gold flash

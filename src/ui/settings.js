@@ -143,6 +143,12 @@ export async function checkForUpdates(force = false) {
       _latestRelease = null;
     }
     if (_badgeCallback) _badgeCallback(_latestRelease);
+    if (_latestRelease) {
+      Utils.Toast.warning(
+        `Mayhem Doctor update available: v${_latestRelease.version.join(".")} — check Settings > Updates!`,
+        { duration: 10000, closable: true },
+      );
+    }
   } catch (err) {
     Utils.Debug.warn("[Mayhem-Doctor] Update check failed:", err);
   } finally {
@@ -454,6 +460,7 @@ export function renderSettingsTab(callbacks = {}) {
       value = Math.max(0.5, Math.min(2.5, value));
       zoomInput.value = value.toFixed(1);
       setSetting(settingKey, value);
+      window.dispatchEvent(new Event("md-settings-sync"));
     };
 
     window.addEventListener("md-settings-sync-window", () => {
@@ -681,7 +688,7 @@ export function renderSettingsTab(callbacks = {}) {
                 storeRemove(storeMod, STORE_KEYS.globalStats);
                 storeRemove(storeMod, STORE_KEYS.globalCrawl);
                 btn.textContent = "Complete!";
-                if (typeof Toast !== 'undefined') Toast.success(successMsg);
+                Utils.Toast.success(successMsg);
                 window.dispatchEvent(new Event("md-cache-reloaded"));
               } else {
                 btn.textContent = "Cancelled";
@@ -722,7 +729,7 @@ export function renderSettingsTab(callbacks = {}) {
             if (crawl) storeSet(storeMod, STORE_KEYS.globalCrawl, crawl);
 
             btn.textContent = "Complete!";
-            if (typeof Toast !== 'undefined') Toast.success(successMsg);
+            Utils.Toast.success(successMsg);
             window.dispatchEvent(new Event("md-cache-reloaded"));
           } catch (err) {
             btn.textContent = "Failed";

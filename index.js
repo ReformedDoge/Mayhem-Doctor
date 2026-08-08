@@ -1,6 +1,6 @@
 /**
  * @name Mayhem-Doctor
- * @version 1.2.0
+ * @version 1.2.5
  * @author SnoozeFest - github@ReformedDoge
  * @description Aram Mayhem Plugin for Pengu Loader.
  * @link https://github.com/ReformedDoge
@@ -44,6 +44,18 @@ export async function load(context) {
   if (context) Utils.LCU.bind(context);
   migrateLegacyDatastore();
 
+  // Toasts live bottom-right.
+  Utils.Toast.setPosition('bottom-right');
+
+  // Hotkey goes live before any modal work so Alt+X works the moment the plugin executes; openCommandBarModal loads its data lazily.
+  window.addEventListener("keydown", (e) => {
+    if (e.code === "KeyX" && e.altKey && !e.ctrlKey &&!e.metaKey) {
+      e.preventDefault();
+      if (hasOpenMayhemWindow()) closeMayhemWindow();
+      else openCommandBarModal();
+    }
+  });
+
   // Inject styles
   const styleEl = document.createElement("style");
   styleEl.textContent = STYLES;
@@ -51,7 +63,22 @@ export async function load(context) {
 
   await loadSettings();
   Utils.Debug.setEnabled(getSettings().debugLogs);
-  if (getSettings().checkUpdates) checkForUpdates();
+  if (getSettings().checkUpdates) {
+    // Run the update check once the client UI shell is fully loaded.
+    const runUpdateCheck = (path) => {
+      Utils.Debug.log(`[Mayhem-Doctor] Update check: ${path}`);
+      checkForUpdates();
+    };
+    const rcp = (context && context.rcp) || window.rcp;
+    if (rcp && typeof rcp.whenReady === "function") {
+      rcp.whenReady("rcp-fe-lol-social").then(
+        () => runUpdateCheck("rcp-fe-lol-social ready"),
+        () => runUpdateCheck("rcp-fe-lol-social rejected"),
+      );
+    } else {
+      runUpdateCheck("no rcp available (immediate)");
+    }
+  }
 
   // Apply file cache setting before loading static data so the flag is ready
   // when initGlobalFileCache fetches the file.
@@ -144,24 +171,15 @@ export async function load(context) {
         const official = clearAllCache(Mode.OFFICIAL);
         const classic = clearAllCache(Mode.CLASSIC);
         const total = official + classic;
-        Toast.success(
+        Utils.Toast.success(
           `Mayhem Doctor: cleared cache (${official} official, ${classic} classic, ${total} total).`,
         );
       } catch (e) {
-        Toast.error(`Mayhem Doctor: failed to clear cache - ${e.message}`);
+        Utils.Toast.error(`Mayhem Doctor: failed to clear cache - ${e.message}`);
       }
     },
   });
 
-  window.addEventListener("keydown", (e) => {
-    if (e.altKey && e.code === "KeyX") {
-      e.preventDefault();
-      if (hasOpenMayhemWindow()) closeMayhemWindow();
-      else openCommandBarModal();
-    }
-  });
-
-  setTimeout(() => {
-    Toast.success("Mayhem Doctor is ready!  •  Press Alt + X to open");
-  }, 8000);
+  // load() is awaited by Pengu - once every await above has resolved, initialization is completed.
+  Utils.Toast.success("Mayhem Doctor is ready!  •  Press Alt + X to open");
 }

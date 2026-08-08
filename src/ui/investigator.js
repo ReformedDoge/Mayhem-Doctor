@@ -7,6 +7,7 @@ import { startInvestigatorAnalysis, startSelfAnalysis } from "../analysis.js";
 import { createModalHost, displayStats } from "./modal.js";
 import { renderStatsInto } from "./tabs.js";
 import { getSettings, updateSetting } from "./settings.js";
+import Utils from "../generalUtils.js";
 
 export const INVESTIGATOR_TAB_ID = "mi-profile-tab";
 export const INVESTIGATOR_PANEL_ID = "mi-profile-panel";
@@ -61,7 +62,7 @@ export function buildInvestigatorDashboard() {
     const count = parseInt(numInput.value, 10) || 50;
 
     if (!riotId || !riotId.includes("#")) {
-      Toast.error("Please enter a valid Riot ID in the format GameName#TAG.");
+      Utils.Toast.error("Please enter a valid Riot ID in the format GameName#TAG.");
       return;
     }
 
@@ -77,7 +78,7 @@ export function buildInvestigatorDashboard() {
 
       if (update.error) {
         statusBar.classList.add("mi-status-hidden");
-        Toast.error(`Error: ${update.error}`);
+        Utils.Toast.error(`Error: ${update.error}`);
         btn.disabled = false;
         btn.textContent = "Investigate";
       }
@@ -85,7 +86,7 @@ export function buildInvestigatorDashboard() {
       if (update.finalStats) {
         const total = update.finalStats.wins + update.finalStats.losses;
         statusBar.classList.add("mi-status-hidden");
-        Toast.success(
+        Utils.Toast.success(
           `Done! Analysed ${total} valid game${total !== 1 ? "s" : ""} for "${riotId}".`,
         );
         await renderStatsInto(resultsEl, update.finalStats, update.fullHistory, {

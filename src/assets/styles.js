@@ -448,6 +448,46 @@ export const STYLES = `
     opacity: 1;
 }
 
+.aram-table-search-btn {
+    background: none;
+    border: none;
+    color: rgba(255, 255, 255, 0.3);
+    font-size: 16px;
+    cursor: pointer;
+    padding: 0 0 0 8px;
+    line-height: 1;
+    transition: color 0.15s;
+    flex-shrink: 0;
+    margin-left: auto;
+}
+
+.aram-table-search-btn:hover,
+.aram-table-search-btn--active {
+    color: #c8aa6e;
+}
+
+.aram-table-search-bar {
+    display: block;
+}
+
+.aram-table-search-bar-input {
+    width: 100%;
+    box-sizing: border-box;
+    background: rgba(0, 0, 0, 0.3);
+    border: none;
+    border-bottom: 1px solid #c8aa6e;
+    color: #f0e6d2;
+    font-size: 13px;
+    font-family: "Beaufort for LOL", serif;
+    outline: none;
+    padding: 6px 10px;
+    letter-spacing: 0.3px;
+}
+
+.aram-table-search-bar-input::placeholder {
+    color: rgba(255, 255, 255, 0.25);
+}
+
 .aram-credits {
     margin-top: 40px;
     padding-top: 10px;
@@ -767,6 +807,19 @@ export const STYLES = `
 
 .sc-section-title--pairs {
     margin-top: 20px;
+}
+
+.sc-section-hint {
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.3px;
+    text-transform: none;
+    color: #999;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    padding: 2px 8px;
+    font-style: normal;
+    margin-left: 4px;
 }
 
 .sc-model-badge {
@@ -1834,7 +1887,8 @@ export const STYLES = `
 
 .sc-tier-col {
     flex: 1;
-    padding: 12px;
+    min-width: 163px;
+    padding: 12px 16px;
     background: rgba(255, 255, 255, 0.02);
     border: 1px solid rgba(255, 255, 255, 0.05);
     border-radius: 6px;

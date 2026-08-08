@@ -1,11 +1,10 @@
-import { Mode, getValidQueueIds, getQueueId } from './mode.js';
-import Utils from './generalUtils.js';
-
 /**
  * Core pipeline: parse raw SGP games → accumulate stats → fetch with cache
  * expose the two public entry points used by UI.
  */
 
+import { Mode, getValidQueueIds, getQueueId } from './mode.js';
+import Utils from './generalUtils.js';
 import {
   VALID_QUEUE_IDS,
   BLACKLIST_ITEM_IDS,
@@ -31,6 +30,17 @@ const LAPLACE_K = 3;
 
 export function smoothedWinRate(wins, games) {
   return ((wins + LAPLACE_K) / (games + 2 * LAPLACE_K)) * 100;
+}
+
+// Wilson 95% lower confidence bound on the true win rate
+export function wilsonLowerBound(wins, games, z = 1.96) {
+  if (games <= 0) return 0;
+  const p = wins / games;
+  const zSq = z * z;
+  const denom = 1 + zSq / games;
+  const centre = p + zSq / (2 * games);
+  const se = Math.sqrt((p * (1 - p)) / games + zSq / (4 * games * games));
+  return Math.max(0, ((centre - z * se) / denom) * 100);
 }
 
 // Shared build-order derivation used by parseGame and buildGlobalStats
@@ -695,7 +705,7 @@ export async function getHomeDashboardData(mode = Mode.OFFICIAL) {
  *
  * @param {object[]} games        Per-champion game records { win, orderedBuild, augments }
  * @param {object}   cItemStats   Per-item { games, wins } for overall WR blending
- * @param {number}   synergyWeight Blend factor between power score and pairwise synergy [0-1]
+ * @param {number}   synergyWeight Blend factor between popularity and confidence-weighted win rate [0-1]
  */
 export function analyzeChampBuildPath(
   games,
@@ -750,14 +760,22 @@ export function analyzeChampBuildPath(
   });
 
   // Rank unique starters by Blend (Pickrate + Winrate)
+  // Win-rate side is confidence-weighted (Wilson LB) and normalized against the
+  // champion's own baseline: LB at/below champ WR scores 0, ~10pp above the
+  // baseline maxes the 0-100 scale, so the "win rate" end of the tuner rewards
+  // *well-measured* winners relative to the champion.
+  const champWr = games.length
+    ? (games.filter((g) => g.win).length / games.length) * 100
+    : 50;
+  const wrScore = (lb) =>
+    Math.min(100, Math.max(0, (lb - champWr) * 10));
   const rankedStarters = Object.entries(firstItemStats)
     .filter(([id, d]) => d.games >= Math.max(3, legendariesGames.length * 0.01))
     .map(([id, d]) => {
       const wr = smoothedWinRate(d.wins, d.games);
       const freqScore = (d.games / legendariesGames.length) * 100;
-      const wrScore = Math.max(0, (wr - 40) * 4);
       const blendedScore =
-        freqScore * (1 - synergyWeight) + wrScore * synergyWeight;
+        freqScore * (1 - synergyWeight) + wrScore(wilsonLowerBound(d.wins, d.games)) * synergyWeight;
       return { id: Number(id), wr, blendedScore, games: d.games };
     })
     .sort((a, b) => b.blendedScore - a.blendedScore);
@@ -786,7 +804,7 @@ export function analyzeChampBuildPath(
         const wr = smoothedWinRate(d.wins, d.games);
         const blended =
           (d.games / subset.length) * 100 * (1 - synergyWeight) +
-          Math.max(0, (wr - 40) * 4) * synergyWeight;
+          wrScore(wilsonLowerBound(d.wins, d.games)) * synergyWeight;
         return { id: Number(id), wr, avgSlot: d.slotSum / d.games, blended };
       })
       .sort((a, b) => b.blended - a.blended)

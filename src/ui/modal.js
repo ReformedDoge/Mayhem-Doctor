@@ -139,6 +139,31 @@ function ensurePopupDocument(win, title) {
   root.appendChild(content);
   doc.body.appendChild(root);
 
+  const applyWindowHeight = () => {
+    const z = parseFloat(getSettings().popoutWindowZoom) || 1;
+    const h = win.innerHeight || doc.documentElement.clientHeight || 800;
+    root.style.height = h > 0 ? `${Math.round(h / z)}px` : "";
+  };
+  applyWindowHeight();
+
+  // Re-apply zoom live if the setting changes while the window is open
+  const onSettingsSync = () => {
+    const s = getSettings();
+    if (s.popoutWindowZoom) doc.body.style.zoom = s.popoutWindowZoom;
+    applyWindowHeight();
+  };
+  window.addEventListener("md-settings-sync", onSettingsSync);
+  win.addEventListener("beforeunload", () => window.removeEventListener("md-settings-sync", onSettingsSync));
+
+  // ResizeObserver keeps the layout reactive to window / zoom changes
+  if (win.ResizeObserver) {
+    const ro = new win.ResizeObserver(() => {
+      applyWindowHeight();
+    });
+    ro.observe(doc.documentElement);
+    win.addEventListener("beforeunload", () => ro.disconnect());
+  }
+
   const resizer = doc.createElement("div");
   resizer.className = "aram-resize-handle";
   doc.body.appendChild(resizer);
@@ -149,24 +174,14 @@ function ensurePopupDocument(win, title) {
 
   const dragMove = (event) => {
     if (!isDragging) return;
-    let newHeight = 0;
-    let newWidth = 0;
 
     const deltaX = event.screenX - currentX;
     const deltaY = event.screenY - currentY;
 
-    if (Math.abs(deltaX) > Math.abs(deltaY)) {
-      newWidth = currentWidth + deltaX;
-      newHeight = newWidth * (currentHeight / currentWidth);
-    } else {
-      newHeight = currentHeight + deltaY;
-      newWidth = newHeight * (currentWidth / currentHeight);
-    }
+    const newWidth  = Math.max(900,  Math.min(3840, Math.round(currentWidth  + deltaX)));
+    const newHeight = Math.max(600,  Math.min(2160, Math.round(currentHeight + deltaY)));
 
-    newWidth = Math.max(900, Math.min(3840, Math.round(newWidth)));
-    newHeight = Math.max(600, Math.min(2160, Math.round(newHeight)));
-
-    if (Math.abs(newWidth - lastWidth) >= 4 || Math.abs(newHeight - lastHeight) >= 4) {
+    if (Math.abs(newWidth - lastWidth) >= 2 || Math.abs(newHeight - lastHeight) >= 2) {
       lastWidth = newWidth;
       lastHeight = newHeight;
       sendWindowCommand(win, "Window.ResizeTo", [newWidth, newHeight]);
@@ -179,8 +194,8 @@ function ensurePopupDocument(win, title) {
     isDragging = true;
     currentX = event.screenX;
     currentY = event.screenY;
-    currentWidth = doc.body.offsetWidth || win.outerWidth || 1280;
-    currentHeight = doc.body.offsetHeight || win.outerHeight || 900;
+    currentWidth  = win.outerWidth  || doc.body.offsetWidth  || 1280;
+    currentHeight = win.outerHeight || doc.body.offsetHeight || 900;
     lastWidth = currentWidth;
     lastHeight = currentHeight;
     win.addEventListener("mousemove", dragMove);
@@ -494,7 +509,7 @@ export async function openCommandBarModal() {
                               <div class="dash-champ-card">
                                   <img src="/lol-game-data/assets/v1/champion-icons/${c.id}.png" class="aram-icon">
                                   <div class="dash-champ-info">
-                                      <div class="dash-champ-stats">${c.games}G &bull; ${((c.wins / c.games) * 100).toFixed(0)}%</div>
+                                      <div class="dash-champ-stats">${c.games}G &bull; ${Math.floor((c.wins / c.games) * 100)}%</div>
                                   </div>
                               </div>
                           `).join("")}
@@ -576,11 +591,7 @@ export async function openCommandBarModal() {
                     setTimeout(() => modalContent.classList.remove("md-unlocked-pulse"), 1000);
 
                     const msg = `Global Crawl ${next ? 'unlocked and enabled' : 'disabled'}!`;
-                    if (typeof Toast !== 'undefined') {
-                        Toast.success(msg);
-                    } else {
-                        Utils.Debug.log(`[Mayhem-Doctor] ${msg}`);
-                    }
+                    Utils.Toast.success(msg);
 
                     secretWrap.style.transition = "color 0.2s ease";
                     secretWrap.style.color = "#f0d67d";
@@ -693,7 +704,7 @@ export async function openCommandBarModal() {
       const count = parseInt(numInput.value, 10) || 50;
 
       if (!riotId || !riotId.includes("#")) {
-        Toast.error("Please enter a valid Riot ID in the format GameName#TAG.");
+        Utils.Toast.error("Please enter a valid Riot ID in the format GameName#TAG.");
         return;
       }
 
