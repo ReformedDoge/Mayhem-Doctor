@@ -63,21 +63,21 @@ export async function load(context) {
 
   await loadSettings();
   Utils.Debug.setEnabled(getSettings().debugLogs);
-  if (getSettings().checkUpdates) {
-    // Run the update check once the client UI shell is fully loaded.
-    const runUpdateCheck = (path) => {
-      Utils.Debug.log(`[Mayhem-Doctor] Update check: ${path}`);
-      checkForUpdates();
-    };
-    const rcp = (context && context.rcp) || window.rcp;
-    if (rcp && typeof rcp.whenReady === "function") {
-      rcp.whenReady("rcp-fe-lol-social").then(
-        () => runUpdateCheck("rcp-fe-lol-social ready"),
-        () => runUpdateCheck("rcp-fe-lol-social rejected"),
-      );
-    } else {
-      runUpdateCheck("no rcp available (immediate)");
-    }
+  // Run the update check AND the ready toast once the client UI shell is fully loaded (rcp-fe-lol-social is one of the last RCP plugins to boot, so "whenReady" on it is the "client is up" signal).
+  // Firing toasts before this point renders them into the boot window, where the shell's startup work / hang can orphan them.
+  const runWhenClientReady = (path) => {
+    Utils.Debug.log(`[Mayhem-Doctor] Client shell ready: ${path}`);
+    if (getSettings().checkUpdates) checkForUpdates();
+    Utils.Toast.success("Mayhem Doctor is ready!  •  Press Alt + X to open");
+  };
+  const rcp = (context && context.rcp) || window.rcp;
+  if (rcp && typeof rcp.whenReady === "function") {
+    rcp.whenReady("rcp-fe-lol-social").then(
+      () => runWhenClientReady("rcp-fe-lol-social ready"),
+      () => runWhenClientReady("rcp-fe-lol-social rejected"),
+    );
+  } else {
+    runWhenClientReady("no rcp available (immediate)");
   }
 
   // Apply file cache setting before loading static data so the flag is ready
@@ -179,7 +179,4 @@ export async function load(context) {
       }
     },
   });
-
-  // load() is awaited by Pengu - once every await above has resolved, initialization is completed.
-  Utils.Toast.success("Mayhem Doctor is ready!  •  Press Alt + X to open");
 }
