@@ -1,6 +1,7 @@
 import { readCacheIndex, readCacheEntry } from './cache.js';
 import { toPatchLabel } from './ui/patchFilter.js';
 import { STORE_KEYS, STORE_MODULES, storeGet, storeRemove, storeSet } from './store.js';
+import { BLACKLIST_AUGMENT_IDS } from './config.js';
 import {
     isFileCacheEnabled,
     readGlobalStatsFromFile,
@@ -85,7 +86,8 @@ function unpackChampEntry(champId, entry) {
     for (const rec of records) {
         const win = rec[0] === 1;
         const items = rec[1] || [];
-        const augments = rec[2] || [];
+        // Blacklisted augments (e.g. mode-theme generics) are dropped at this read boundary
+        const augments = (rec[2] || []).filter(aId => aId && !BLACKLIST_AUGMENT_IDS.has(Number(aId)));
         const orderedBuild = rec[3] || [];
         const gameCreation = rec[4] ?? null;
 

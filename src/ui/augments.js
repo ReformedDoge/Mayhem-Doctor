@@ -4,6 +4,7 @@
  */
 
 import { AUGMENT_DATA } from '../lcu.js';
+import { BLACKLIST_AUGMENT_IDS } from '../config.js';
 import { smoothedWinRate, wilsonLowerBound } from '../analysis.js';
 import { createInteractiveTable, attachTableSearch } from './table.js';
 
@@ -100,6 +101,7 @@ export function buildTierChampions(cAugStats, gamesCount, champWr = 50) {
 
     Object.entries(cAugStats).forEach(([id, d]) => {
         if (d.games < minSample) return;
+        if (BLACKLIST_AUGMENT_IDS.has(Number(id))) return;
         const rarity = getAugRarity(Number(id));
         if (!tiers[rarity]) return;
 
@@ -124,7 +126,7 @@ export function buildTierChampions(cAugStats, gamesCount, champWr = 50) {
 export function buildSeenPairs(games, topN = 5, minGames = 2) {
     const map = {};
     games.forEach(g => {
-        const augs = [...new Set(g.augments.map(Number).filter(Boolean))];
+        const augs = [...new Set(g.augments.map(Number).filter(aId => aId && !BLACKLIST_AUGMENT_IDS.has(aId)))];
         for (let i = 0; i < augs.length; i++) {
             for (let j = i + 1; j < augs.length; j++) {
                 const a = augs[i], b = augs[j];
@@ -260,7 +262,9 @@ export function buildAugSection(games, cAugStats, totalGames, champWr = 50) {
     augTableTitle.textContent = 'Individual Augments';
     augSection.appendChild(augTableTitle);
 
-    const augRows = Object.entries(cAugStats).map(([aId, d]) => {
+    const augRows = Object.entries(cAugStats)
+        .filter(([aId]) => !BLACKLIST_AUGMENT_IDS.has(Number(aId)))
+        .map(([aId, d]) => {
         const info = AUGMENT_DATA[aId] || { name: `Augment ${aId}`, icon: '', rarity: '' };
         const rarity = info.rarity || '';
         return {

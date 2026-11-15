@@ -8,6 +8,7 @@ import Utils from './generalUtils.js';
 import {
   VALID_QUEUE_IDS,
   BLACKLIST_ITEM_IDS,
+  BLACKLIST_AUGMENT_IDS,
   BOOT_IDS,
   SETTINGS,
 } from "./config.js";
@@ -214,6 +215,7 @@ export function accumulateStats(stats, entry) {
     if (win) stats.items[iId].wins++;
   });
   entry.augments.forEach((aId) => {
+    if (BLACKLIST_AUGMENT_IDS.has(Number(aId))) return;
     if (!stats.augments[aId]) stats.augments[aId] = { games: 0, wins: 0 };
     stats.augments[aId].games++;
     if (win) stats.augments[aId].wins++;
@@ -298,7 +300,7 @@ export function buildGlobalStats(fullHistory) {
         part.playerAugment4,
         part.playerAugment5,
         part.playerAugment6,
-      ].filter((id) => id);
+      ].filter((id) => id && !BLACKLIST_AUGMENT_IDS.has(id));
 
       if (!isRemake) {
         finalItems.forEach((iId) => {

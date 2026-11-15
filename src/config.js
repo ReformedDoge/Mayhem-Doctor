@@ -62,6 +62,12 @@ export const BLACKLIST_ITEM_IDS = new Set([
     3865, 2422,
 ]);
 
+// Augment IDs excluded from all ~~aggregation~~ and rendering (mirrors BLACKLIST_ITEM_IDS).
+// Storage stays raw: filtering happens presentation-side only (aggregation in globalCache/analysis, render guards in the UI)
+export const BLACKLIST_AUGMENT_IDS = new Set([
+    3176, // GoH_PentakillAug_Generic (mode-theme noise)
+]);
+
 // Known completed boot item IDs.
 // This hardcoded set is the reliable seed - loadStaticData in lcu.js augments it
 // dynamically so new boots added by Riot are picked up without a code change.

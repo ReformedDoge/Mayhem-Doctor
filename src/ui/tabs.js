@@ -4,16 +4,17 @@
  */
 
 import { CHAMPION_DATA, AUGMENT_DATA, ITEM_DATA, LCU_API, myPuuid } from "../lcu.js";
-import { ENABLE_GLOBAL_CRAWL } from "../config.js";
+import { ENABLE_GLOBAL_CRAWL, BLACKLIST_AUGMENT_IDS } from "../config.js";
 import {
   accumulateStats,
   buildGlobalStats,
   smoothedWinRate,
+  wilsonLowerBound,
   getWRColor,
 } from "../analysis.js";
 import { createInteractiveTable } from "./table.js";
 import { openAramMatchView } from "./matchView.js";
-import { buildAugSection } from "./augments.js";
+import { buildAugSection, getAugRarity } from "./augments.js";
 import { buildItemSection } from "./items.js";
 import { createPatchFilter, toPatchLabel } from "./patchFilter.js";
 import {
@@ -139,6 +140,7 @@ export function renderGeneralTab(stats, onChampClick) {
   );
 
   const augData = Object.entries(stats.augments)
+    .filter(([id]) => !BLACKLIST_AUGMENT_IDS.has(Number(id)))
     .map(([id, d]) => ({
       id,
       name: (AUGMENT_DATA[id] || { name: `Augment ${id}` }).name,
@@ -209,6 +211,7 @@ export function renderHistoryTab(
   selectedChamps,
   onFilterChange,
   doc = document,
+  mode = Mode.OFFICIAL,
 ) {
   const container = doc.createElement("div");
   container.className = "mh-root";
@@ -376,7 +379,10 @@ export function renderHistoryTab(
           const targetContainer = e.target.closest(
             ".aram-modal-content, #mi-results",
           );
-          openAramMatchView(row.rawGame, targetContainer);
+          openAramMatchView(row.rawGame, targetContainer, {
+            mode,
+            result: row.result,
+          });
         },
       ),
     );
@@ -492,7 +498,7 @@ export function renderSpecificChampionsTab(stats, fullHistory, onChampClick) {
     if (h.result === "Remake") return;
     const cId = String(h.championId);
     const win = h.result === "Win";
-    const augments = (h.augments ||[]).map(Number).filter(Boolean);
+    const augments = (h.augments ||[]).map(Number).filter(aId => aId && !BLACKLIST_AUGMENT_IDS.has(aId));
     const items = (h.items ||[]).map(Number).filter(Boolean);
 
     if (!champItemStats[cId]) champItemStats[cId] = {};
@@ -632,10 +638,15 @@ export function renderGlobalChampionsTab(fullHistory, excludedPatches, onChampCl
   controlsRow.appendChild(patchSelect);
   controlsRow.appendChild(startBtn);
 
-  // Champion grid container 
+  // Meta overview container (populated by renderOverview with the active payload)
+  const overviewContainer = document.createElement("div");
+  overviewContainer.className = "gc-overview";
+
+  // Champion grid container
   const gridContainer = document.createElement("div");
   gridContainer.className = "gc-grid-container";
   root.appendChild(panel);
+  root.appendChild(overviewContainer);
   root.appendChild(gridContainer);
 
   // Computed once at construction - reused on every personal-mode toggle
@@ -643,9 +654,152 @@ export function renderGlobalChampionsTab(fullHistory, excludedPatches, onChampCl
 
   // Render helpers 
 
+  // Renders the meta overview strip from the active stats payload (crawl or personal).
+  // Default ranking: win rate weighted by pick confidence (Wilson lower bound. same priority logic as the champion-tier board).
+  // Toggle switches to raw pick count.
+  let lastOverviewPayload = null;
+  let overviewRank = "wr"; // 'wr' (default) | 'picks'
+  let overviewCollapsed = true;
+
+  function renderOverview(statsPayload) {
+    const { stats } = statsPayload;
+    lastOverviewPayload = statsPayload;
+    overviewContainer.innerHTML = "";
+    const totalGames = stats.wins + stats.losses;
+    if (totalGames === 0) {
+      overviewContainer.style.display = "none";
+      return;
+    }
+    overviewContainer.style.display = "";
+
+    const fmtPicks = (n) => (n >= 1000 ? (n / 1000).toFixed(1).replace(/\.0$/, "") + "k" : String(n));
+
+    // 'wr' mode: Wilson lower bound (picks-weighted WR). 'picks' mode: raw popularity.
+    // Sample floor is sized PER CATEGORY (2% of that category's most-picked entry):
+    // totalGames counts participant slots (~2M for a 200k crawl), ~10x any single
+    // champion's games, so a 2%-of-total floor filtered out every champion.
+    // Same spirit as buildTierChampions' per-champion minSample; Wilson LB guards thin samples, and the top entry itself always passes.
+    const rankVal = (d) =>
+      overviewRank === "picks" ? d.games : wilsonLowerBound(d.wins, d.games);
+    const floorOf = (entries) => {
+      if (overviewRank === "picks") return 2;
+      const topPicks = entries.reduce((m, [, d]) => Math.max(m, d.games), 0);
+      return Math.max(2, Math.floor(topPicks * 0.02));
+    };
+    const hint =
+      overviewRank === "picks"
+        ? "Ranked by picks · min 2 picks · WR is Laplace-smoothed"
+        : "Ranked by picks-weighted WR (Wilson LB) · min 2% of top picks";
+
+    const buildRows = (rows, iconHtml) =>
+      rows
+        .map(
+          (d) => `
+          <div class="gc-overview-item" title="${d.name} — ${d.games} picks · ${d.wr.toFixed(1)}% WR">
+              ${iconHtml(d)}
+              <span class="gc-overview-name">${d.name}</span>
+              <span class="gc-overview-stats">${fmtPicks(d.games)}p · ${d.wr.toFixed(1)}%</span>
+          </div>`,
+        )
+        .join("");
+
+    const collect = (entries, nameOf, iconOf, minSample) =>
+      entries
+        .map(([id, d]) => ({
+          id,
+          name: nameOf(id),
+          icon: iconOf(id),
+          games: d.games,
+          wins: d.wins,
+          wr: smoothedWinRate(d.wins, d.games),
+        }))
+        .filter((d) => d.games >= minSample && d.icon)
+        .sort((a, b) => rankVal(b) - rankVal(a));
+
+    const augEntries = Object.entries(stats.augments);
+    const itemEntries = Object.entries(stats.items);
+    const champEntries = Object.entries(stats.champions);
+
+    const augRows = collect(
+      augEntries,
+      (id) => (AUGMENT_DATA[id] || { name: `Augment ${id}` }).name,
+      (id) => (AUGMENT_DATA[id] || {}).icon || "",
+      floorOf(augEntries),
+    );
+    const itemRows = collect(
+      itemEntries,
+      (id) => (ITEM_DATA[id] || { name: `Item ${id}` }).name,
+      (id) => (ITEM_DATA[id] || {}).icon || "",
+      floorOf(itemEntries),
+    );
+    const champRows = collect(
+      champEntries,
+      (id) => CHAMPION_DATA[id] || `ID ${id}`,
+      (id) => `/lol-game-data/assets/v1/champion-icons/${id}.png`,
+      floorOf(champEntries),
+    );
+
+    const augIcon = (d) => {
+      const rc =
+        { kSilver: "sc-aug-silver", kGold: "sc-aug-gold", kPrismatic: "sc-aug-prismatic" }[
+          getAugRarity(Number(d.id))
+        ] || "";
+      return `<img src="${d.icon}" class="aram-icon sc-aug-border ${rc}">`;
+    };
+    const plainIcon = (d) => `<img src="${d.icon}" class="aram-icon">`;
+
+    overviewContainer.innerHTML = `
+        <div class="gc-overview-header">
+            <span>Current Meta Overview</span>
+            <div class="gc-overview-rank-toggle">
+                <span class="gc-rank-pill ${overviewRank === "wr" ? "active" : ""}" data-rank="wr" title="Win rate weighted by pick confidence (Wilson lower bound - same priority logic as the champion tier board)">Best WR</span>
+                <span class="gc-rank-pill ${overviewRank === "picks" ? "active" : ""}" data-rank="picks" title="Rank by raw pick count - most popular first">Most Picked</span>
+            </div>
+            <span class="gc-overview-hint">${hint}</span>
+            <span class="gc-overview-toggle" title="Collapse / expand">${overviewCollapsed ? "▸" : "▾"}</span>
+        </div>
+        <div class="gc-overview-body" style="display: ${overviewCollapsed ? "none" : ""};">
+            <div class="gc-overview-grid">
+                <div class="gc-overview-col">
+                    <div class="gc-overview-label">Top Augments <span class="gc-overview-count">${augRows.length}</span></div>
+                    <div class="gc-overview-col-scroll">${buildRows(augRows, augIcon)}</div>
+                </div>
+                <div class="gc-overview-col">
+                    <div class="gc-overview-label">Top Items <span class="gc-overview-count">${itemRows.length}</span></div>
+                    <div class="gc-overview-col-scroll">${buildRows(itemRows, plainIcon)}</div>
+                </div>
+                <div class="gc-overview-col">
+                    <div class="gc-overview-label">Top Champions <span class="gc-overview-count">${champRows.length}</span></div>
+                    <div class="gc-overview-col-scroll">${buildRows(champRows, plainIcon)}</div>
+                </div>
+            </div>
+        </div>
+    `;
+
+    const headerEl = overviewContainer.querySelector(".gc-overview-header");
+    const bodyEl = overviewContainer.querySelector(".gc-overview-body");
+    headerEl.onclick = (e) => {
+      if (e.target.closest(".gc-rank-pill")) return;
+      overviewCollapsed = !overviewCollapsed;
+      bodyEl.style.display = overviewCollapsed ? "none" : "";
+      overviewContainer.querySelector(".gc-overview-toggle").textContent =
+        overviewCollapsed ? "▸" : "▾";
+    };
+    overviewContainer.querySelectorAll(".gc-rank-pill").forEach((pill) => {
+      pill.onclick = (e) => {
+        e.stopPropagation();
+        const rank = pill.dataset.rank;
+        if (rank === overviewRank) return;
+        overviewRank = rank;
+        renderOverview(lastOverviewPayload);
+      };
+    });
+  }
+
   /** Renders the champion grid from the given stats payload */
   function renderGrid(statsPayload) {
     gridContainer.innerHTML = "";
+    renderOverview(statsPayload);
 
     const { stats, champGames, champItemStats, champAugStats } = statsPayload;
     const totalGames = stats.wins + stats.losses;
@@ -675,6 +829,7 @@ export function renderGlobalChampionsTab(fullHistory, excludedPatches, onChampCl
     gridContainer.appendChild(
       buildChampionGridView(champEntries, champGames, champItemStats, champAugStats, null, (isOpen) => {
         panel.style.display = isOpen ? "none" : "";
+        overviewContainer.style.display = isOpen ? "none" : "";
       })
     );
   }
@@ -846,6 +1001,7 @@ export function renderGlobalChampionsTab(fullHistory, excludedPatches, onChampCl
 
       if (isExcluded) {
         gridContainer.innerHTML = "";
+        overviewContainer.style.display = "none";
         const msg = document.createElement("p");
         msg.className = "sc-empty";
         msg.innerHTML = `Crawl data for <b>Patch ${crawlPatch}</b> is hidden by your current patch filter.<br>` +
@@ -1224,7 +1380,7 @@ export async function renderStatsInto(
     const refreshHistory = () => {
       historyEl.innerHTML = "";
       historyEl.appendChild(
-        renderHistoryTab(filtered, selectedChamps, refreshHistory, doc),
+        renderHistoryTab(filtered, selectedChamps, refreshHistory, doc, mode),
       );
     };
 
