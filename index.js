@@ -1,6 +1,6 @@
 /**
  * @name Mayhem-Doctor
- * @version 1.2.5
+ * @version 1.2.6
  * @author SnoozeFest - github@ReformedDoge
  * @description Aram Mayhem Plugin for Pengu Loader.
  * @link https://github.com/ReformedDoge
